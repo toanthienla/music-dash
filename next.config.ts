@@ -10,23 +10,29 @@ const nextConfig: NextConfig = {
     ],
   },
 
-  webpack(config, { isServer }) {
-    // Remove default SVG handling
-    config.module.rules = config.module.rules.map((rule: any) => {
-      if (rule.test?.toString().includes("svg")) {
-        return {
-          ...rule,
-          test: /\.(png|jpg|jpeg|gif|webp|avif|ico|bmp)$/i,
-        };
-      }
-      return rule;
-    });
+  webpack: (config, { isServer }) => {
+    // Find the existing SVG rule and disable it
+    const imageRule = config.module.rules.find(
+      (rule: any) => rule?.test?.toString().includes("svg")
+    );
 
-    // Add @svgr/webpack for SVG imports as React components
+    if (imageRule) {
+      imageRule.exclude = /\.svg$/i;
+    }
+
+    // Add SVGR webpack loader - MUST be FIRST
     config.module.rules.unshift({
       test: /\.svg$/i,
-      issuer: /\.[jt]sx?$/,
-      use: ["@svgr/webpack"],
+      use: [
+        {
+          loader: "@svgr/webpack",
+          options: {
+            svgo: false,
+            titleProp: true,
+            ref: true,
+          },
+        },
+      ],
     });
 
     return config;

@@ -82,7 +82,15 @@ const CountryMap: React.FC<CountryMapProps> = ({ mapColor }) => {
       markerStyle={{
         initial: {
           fill: "#465FFF",
-          r: 5,
+          stroke: "white",
+          strokeWidth: 2,
+          opacity: 1,
+        },
+        hover: {
+          fill: "#6B7DFF",
+          stroke: "white",
+          strokeWidth: 2,
+          cursor: "pointer",
         },
       }}
       zoomOnScroll={false}

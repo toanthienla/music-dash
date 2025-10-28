@@ -3,12 +3,12 @@ import React, { useEffect, useState } from "react";
 import mockapi from "@/utils/mockapi";
 import Badge from "../ui/badge/Badge";
 import { ArrowDownIcon, Clock, Tick } from "@/icons";
-import { MOCK_API_URL } from "@/utils/constants"; // nếu bạn đã có base URL ở đây
+import { MOCK_API_URL } from "@/utils/constants";
 
 interface DeviceStats {
   onlineDevices: number;
   totalDevices: number;
-  runtime: string; // VD: "03:50:23"
+  runtime: string;
   changePercent: number;
 }
 
@@ -20,7 +20,7 @@ export const EcommerceMetrics = () => {
     const fetchStats = async () => {
       try {
         const res = await mockapi.get(`${MOCK_API_URL}/api/v1/devices/status`, {
-          withCredentials: true, // nếu backend dùng cookie
+          withCredentials: true,
         });
         console.log("Device stats:", res.data.data);
         setStats(res.data.data[0]);
@@ -77,7 +77,7 @@ export const EcommerceMetrics = () => {
                 {stats?.runtime || "00:00:00"}
               </h4>
 
-              <Badge color={stats?.changePercent && stats.changePercent < 0 ? "success" : "danger"}>
+              <Badge color={stats?.changePercent && stats.changePercent < 0 ? "success" : "warning"}>
                 <div className="flex items-center gap-1 whitespace-nowrap">
                   <ArrowDownIcon className="text-success-500 w-4 h-4" />
                   <span>
