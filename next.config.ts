@@ -11,13 +11,23 @@ const nextConfig: NextConfig = {
   },
 
   webpack(config, { isServer }) {
-    config.module.rules.push(
-      {
-        test: /\.svg$/i,
-        issuer: /\.[jt]sx?$/,
-        use: ["@svgr/webpack"],
+    // Remove default SVG handling
+    config.module.rules = config.module.rules.map((rule: any) => {
+      if (rule.test?.toString().includes("svg")) {
+        return {
+          ...rule,
+          test: /\.(png|jpg|jpeg|gif|webp|avif|ico|bmp)$/i,
+        };
       }
-    );
+      return rule;
+    });
+
+    // Add @svgr/webpack for SVG imports as React components
+    config.module.rules.unshift({
+      test: /\.svg$/i,
+      issuer: /\.[jt]sx?$/,
+      use: ["@svgr/webpack"],
+    });
 
     return config;
   },
