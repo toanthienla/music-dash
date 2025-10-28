@@ -148,7 +148,7 @@ const QueuePanel: React.FC = () => {
   const [addingMusic, setAddingMusic] = useState<boolean>(false);
   const [searchMusicTerm, setSearchMusicTerm] = useState<string>("");
   const [isClearing, setIsClearing] = useState<boolean>(false);
-  const [isRemovingSong, setIsRemovingSong] = useState<string | null>(null);
+  const [isRemovingSongAtPosition, setIsRemovingSongAtPosition] = useState<number | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
   const [isPlaybackSeeking, setIsPlaybackSeeking] = useState<boolean>(false);
 
@@ -678,10 +678,11 @@ const QueuePanel: React.FC = () => {
     }
   };
 
-  // Remove song at specific position
+  // Remove song at specific position - FIXED: Track by position index, not song ID
   const handleRemoveSongAtPosition = async (position: number) => {
     try {
-      setIsRemovingSong(queue[position].id);
+      // Set loading state by position index, not by song ID
+      setIsRemovingSongAtPosition(position);
 
       if (!TEKNIX_USER_SESSION_TOKEN) {
         throw new Error("Session token not found");
@@ -729,7 +730,8 @@ const QueuePanel: React.FC = () => {
     } catch (err: any) {
       console.error("Error removing song from queue:", err);
     } finally {
-      setIsRemovingSong(null);
+      // Clear loading state by position
+      setIsRemovingSongAtPosition(null);
     }
   };
 
@@ -1084,7 +1086,7 @@ const QueuePanel: React.FC = () => {
         <div className="space-y-2 max-h-96 overflow-y-auto rounded-lg border border-gray-100">
           {queue.map((song, index) => (
             <div
-              key={song.id}
+              key={`${song.id}-${index}`}
               onClick={() => handleSongClick(song, index)}
               className={`flex items-center justify-between px-3 py-3 transition-all duration-200 cursor-pointer group ${currentQueueIndex === index ? "bg-orange-50" : "hover:bg-gray-50"
                 }`}
@@ -1122,11 +1124,11 @@ const QueuePanel: React.FC = () => {
                   e.stopPropagation();
                   handleRemoveSongAtPosition(index);
                 }}
-                disabled={isRemovingSong === song.id}
+                disabled={isRemovingSongAtPosition === index}
                 className="p-1 text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50 flex-shrink-0"
                 aria-label="Remove song"
               >
-                {isRemovingSong === song.id ? (
+                {isRemovingSongAtPosition === index ? (
                   <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin"></div>
                 ) : (
                   <Trash2 size={16} />
