@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import axiosClient from "@/utils/axiosClient";
+import { TEKNIX_USER_SESSION_TOKEN } from "@/utils/constants";
 
 import PaginationWithTextWitIcon from "../ui/pagination/PaginationWithTextWitIcon";
 import { TrashBinIcon } from "@/icons";
@@ -48,6 +49,7 @@ type PlaylistFormData = {
 const MUSIC_API_URL = `/api/v1/music`;
 const MUSIC_UPLOAD_API_URL = `/api/v1/music/upload`;
 const PLAYLISTS_API_URL = `/api/v1/playlists`;
+const QUEUE_API_URL = `/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`;
 
 export default function BasicTableOne() {
   // Pagination state - Music
@@ -90,6 +92,7 @@ export default function BasicTableOne() {
   const [playlistsError, setPlaylistsError] = React.useState<string | null>(null);
   const [savingMedia, setSavingMedia] = React.useState(false);
   const [savingPlaylist, setSavingPlaylist] = React.useState(false);
+  const [addingToQueue, setAddingToQueue] = React.useState(false);
 
   // Audio playback state
   const [isPlaying, setIsPlaying] = React.useState(false);
@@ -207,6 +210,31 @@ export default function BasicTableOne() {
       audio.pause();
       setIsPlaying(false);
       setCurrentPlayingId(null);
+    }
+  };
+
+  const handleAddSelectedToQueue = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      setAddingToQueue(true);
+
+      const musicIds = Array.from(selectedIds);
+
+      const response = await axiosClient.post(QUEUE_API_URL, {
+        music_ids: musicIds,
+      });
+
+      if (response.data?.success) {
+        alert(`${musicIds.length} music added to queue successfully!`);
+        setSelectedIds(new Set());
+      } else {
+        alert("Failed to add music to queue. Please try again.");
+      }
+    } catch (error: any) {
+      console.error("Error adding music to queue:", error);
+      alert(error?.response?.data?.message || "Failed to add music to queue. Please try again.");
+    } finally {
+      setAddingToQueue(false);
     }
   };
 
@@ -498,6 +526,34 @@ export default function BasicTableOne() {
               Filter
             </button>
 
+            {activeTab === "media" && (
+              <>
+                {/* Add to queue button - only for media tab */}
+                <button
+                  onClick={handleAddSelectedToQueue}
+                  disabled={selectedIds.size === 0 || addingToQueue}
+                  className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-theme-sm font-medium transition-all ${selectedIds.size === 0 || addingToQueue
+                    ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
+                    : "border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100 hover:border-blue-400 hover:text-blue-700 active:bg-blue-200 shadow-sm hover:shadow-md"
+                    }`}
+                  title={selectedIds.size === 0 ? "Select music to add to queue" : "Add selected music to queue"}
+                >
+                  {addingToQueue ? (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 animate-spin" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M4.293 5.293a1 1 0 011.414 0A7 7 0 1015.707 4.293a1 1 0 11-1.414 1.414A5 5 0 005.707 6.707a1 1 0 01-1.414-1.414z" clipRule="evenodd" />
+                      </svg>
+                      Adding...
+                    </>
+                  ) : (
+                    <>
+                      Add to Queue
+                    </>
+                  )}
+                </button>
+              </>
+            )}
+
             {/* Bulk delete */}
             <button
               onClick={() => {
@@ -510,20 +566,12 @@ export default function BasicTableOne() {
                 : "border-red-300 bg-red-50 text-red-600 hover:bg-red-100 hover:border-red-400 hover:text-red-700 active:bg-red-200 shadow-sm hover:shadow-md"
                 }`}
             >
-              <TrashBinIcon
-                className={`w-4 h-4 ${(activeTab === "media" && selectedIds.size === 0) || (activeTab === "playlist" && selectedPlaylistIds.size === 0)
-                  ? "text-gray-300"
-                  : "text-red-500"
-                  }`}
-              />
               Delete{" "}
-              {activeTab === "media" && selectedIds.size > 0 && `(${selectedIds.size})`}
-              {activeTab === "playlist" && selectedPlaylistIds.size > 0 && `(${selectedPlaylistIds.size})`}
             </button>
 
             {/* Add new */}
             <button onClick={() => setIsAddOpen(true)} className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md text-sm">
-              + Add new
+              {activeTab === "playlist" ? "+ New Playlist" : "+ New Music"}
             </button>
           </div>
         </div>

@@ -12,12 +12,28 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import axiosClient from "@/utils/axiosClient";
 
-interface Song {
-  id: number;
+interface Music {
+  id: string;
   title: string;
-  artist: string;
-  duration: string;
-  cover: string;
+  artist?: string;
+  durationSeconds: number;
+  fileUrl: string;
+  fileFormat: string;
+  bitrateKbps: number;
+  fileSize: number;
+  contentType: string;
+  uploadedBy: string;
+  visibility: string;
+  isPublic: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface RecentlyPlayedItem {
+  music: Music;
+  playedAt: string;
+  playDurationSeconds: number;
+  completed: boolean;
 }
 
 interface Playlist {
@@ -32,44 +48,6 @@ interface Playlist {
   trackCount: number;
   description?: string;
 }
-
-const recentlyPlayedData: Song[] = [
-  {
-    id: 1,
-    title: "Without You - The Kid LAROI",
-    artist: "",
-    duration: "",
-    cover: "/images/music/without.svg",
-  },
-  {
-    id: 2,
-    title: "Shades of Love - Ania Szarmach",
-    artist: "",
-    duration: "",
-    cover: "/images/music/shades.svg",
-  },
-  {
-    id: 3,
-    title: "Save Your Tears - The Weeknd",
-    artist: "",
-    duration: "",
-    cover: "/images/music/saveyourtear.svg",
-  },
-  {
-    id: 4,
-    title: "Without You - The Kid LAROI",
-    artist: "",
-    duration: "",
-    cover: "/images/music/without.svg",
-  },
-  {
-    id: 5,
-    title: "Shades of Love - Ania Szarmach",
-    artist: "",
-    duration: "",
-    cover: "/images/music/shades.svg",
-  },
-];
 
 function pickColorForText(text?: string) {
   const palette = [
@@ -93,9 +71,9 @@ function pickColorForText(text?: string) {
   return palette[Math.abs(hash) % palette.length];
 }
 
-function generatePlaceholderCover(text?: string, size = 120) {
+function generatePlaceholderCover(text?: string, size = 150) {
   const color = pickColorForText(text);
-  const initials = (text || "P")
+  const initials = (text || "M")
     .trim()
     .split(/\s+/)
     .slice(0, 2)
@@ -112,25 +90,56 @@ function generatePlaceholderCover(text?: string, size = 120) {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
+function formatDuration(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+}
+
 export default function RecentOrders() {
+  const [recentlyPlayedData, setRecentlyPlayedData] = useState<RecentlyPlayedItem[]>([]);
   const [playlistData, setPlaylistData] = useState<Playlist[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadingRecent, setLoadingRecent] = useState(true);
+  const [loadingPlaylists, setLoadingPlaylists] = useState(true);
+  const [errorRecent, setErrorRecent] = useState<string | null>(null);
+  const [errorPlaylists, setErrorPlaylists] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchRecentlyPlayed = async () => {
+      try {
+        setLoadingRecent(true);
+        setErrorRecent(null);
+        const response = await axiosClient.get("/api/v1/music/recently-played");
+
+        if (response.data.success && response.data.data?.data) {
+          setRecentlyPlayedData(response.data.data.data);
+        }
+      } catch (err) {
+        console.error("Error fetching recently played music:", err);
+        setErrorRecent("Failed to load recently played music");
+      } finally {
+        setLoadingRecent(false);
+      }
+    };
+
+    fetchRecentlyPlayed();
+  }, []);
 
   useEffect(() => {
     const fetchPlaylists = async () => {
       try {
-        setLoading(true);
+        setLoadingPlaylists(true);
+        setErrorPlaylists(null);
         const response = await axiosClient.get("/api/v1/playlists");
 
-        if (response.data.success && response.data.data.data) {
+        if (response.data.success && response.data.data?.data) {
           setPlaylistData(response.data.data.data);
         }
       } catch (err) {
         console.error("Error fetching playlists:", err);
-        setError("Failed to load playlists");
+        setErrorPlaylists("Failed to load playlists");
       } finally {
-        setLoading(false);
+        setLoadingPlaylists(false);
       }
     };
 
@@ -173,41 +182,72 @@ export default function RecentOrders() {
 
       {/* Recently Played carousel */}
       <div className="mt-4">
-        <div className="relative">
-          <button
-            aria-label="prev"
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-white shadow-md flex items-center justify-center -ml-4"
-            onClick={() => {
-              const el = document.getElementById('recent-played-scroll');
-              if (el) el.scrollBy({ left: -300, behavior: 'smooth' });
-            }}
-          >
-            <span className="text-gray-500">‹</span>
-          </button>
-
-          <div id="recent-played-scroll" className="no-scrollbar flex gap-5 overflow-x-auto pb-4 pl-8">
-            {recentlyPlayedData.map((s) => (
-              <div key={s.id} className="w-[150px] shrink-0">
-                <div className="h-[150px] w-[150px] overflow-hidden rounded-xl shadow-sm">
-                  <Image src={s.cover} width={150} height={150} alt={s.title} />
-                </div>
-                <p className="mt-3 font-semibold text-gray-800 text-sm">{s.title}</p>
-                <p className="text-gray-500 text-xs truncate">{s.artist}</p>
-              </div>
-            ))}
+        {loadingRecent && (
+          <div className="flex justify-center py-8">
+            <p className="text-gray-500">Loading recently played music...</p>
           </div>
+        )}
 
-          <button
-            aria-label="next"
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-white shadow-md flex items-center justify-center -mr-4"
-            onClick={() => {
-              const el = document.getElementById('recent-played-scroll');
-              if (el) el.scrollBy({ left: 300, behavior: 'smooth' });
-            }}
-          >
-            <span className="text-gray-500">›</span>
-          </button>
-        </div>
+        {errorRecent && (
+          <div className="flex justify-center py-8">
+            <p className="text-red-500">{errorRecent}</p>
+          </div>
+        )}
+
+        {!loadingRecent && !errorRecent && recentlyPlayedData.length === 0 && (
+          <div className="flex justify-center py-8">
+            <p className="text-gray-500">No recently played music found</p>
+          </div>
+        )}
+
+        {!loadingRecent && !errorRecent && recentlyPlayedData.length > 0 && (
+          <div className="relative">
+            <button
+              aria-label="prev"
+              className="absolute left-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-white shadow-md flex items-center justify-center -ml-4"
+              onClick={() => {
+                const el = document.getElementById('recent-played-scroll');
+                if (el) el.scrollBy({ left: -300, behavior: 'smooth' });
+              }}
+            >
+              <span className="text-gray-500">‹</span>
+            </button>
+
+            <div id="recent-played-scroll" className="no-scrollbar flex gap-5 overflow-x-auto pb-4 pl-8">
+              {recentlyPlayedData.map((item) => (
+                <div key={item.music.id} className="w-[150px] shrink-0">
+                  <div className="h-[150px] w-[150px] overflow-hidden rounded-xl shadow-sm">
+                    <img
+                      src={generatePlaceholderCover(item.music.title, 150)}
+                      alt={item.music.title}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <p className="mt-3 font-semibold text-gray-800 text-sm dark:text-white/90 truncate">
+                    {item.music.title}
+                  </p>
+                  <p className="text-gray-500 text-xs truncate dark:text-white/60">
+                    {item.music.artist || "Unknown Artist"}
+                  </p>
+                  <p className="text-gray-400 text-xs mt-1">
+                    {formatDuration(item.music.durationSeconds)}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <button
+              aria-label="next"
+              className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-white shadow-md flex items-center justify-center -mr-4"
+              onClick={() => {
+                const el = document.getElementById('recent-played-scroll');
+                if (el) el.scrollBy({ left: 300, behavior: 'smooth' });
+              }}
+            >
+              <span className="text-gray-500">›</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Play list carousel */}
@@ -217,25 +257,25 @@ export default function RecentOrders() {
           <button className="text-orange-500 font-medium hover:underline">See All</button>
         </div>
 
-        {loading && (
+        {loadingPlaylists && (
           <div className="flex justify-center py-8">
             <p className="text-gray-500">Loading playlists...</p>
           </div>
         )}
 
-        {error && (
+        {errorPlaylists && (
           <div className="flex justify-center py-8">
-            <p className="text-red-500">{error}</p>
+            <p className="text-red-500">{errorPlaylists}</p>
           </div>
         )}
 
-        {!loading && !error && playlistData.length === 0 && (
+        {!loadingPlaylists && !errorPlaylists && playlistData.length === 0 && (
           <div className="flex justify-center py-8">
             <p className="text-gray-500">No playlists found</p>
           </div>
         )}
 
-        {!loading && !error && playlistData.length > 0 && (
+        {!loadingPlaylists && !errorPlaylists && playlistData.length > 0 && (
           <div className="relative">
             <button
               aria-label="prev-playlist"

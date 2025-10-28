@@ -719,7 +719,7 @@ const QueuePanel: React.FC = () => {
     ? (currentTime / currentSong.durationSeconds) * 100
     : 0;
 
-  // Filter available music by search term
+  // Filter available music by search term - SHOW ALL MUSIC
   const filteredAvailableMusic = availableMusic.filter((music) => {
     const q = searchMusicTerm.toLowerCase();
     return (
@@ -727,12 +727,6 @@ const QueuePanel: React.FC = () => {
       (music.artist ?? "").toLowerCase().includes(q)
     );
   });
-
-  // Get music that are not already in queue
-  const queueMusicIds = new Set(queue.map((s) => s.id));
-  const addableMusic = filteredAvailableMusic.filter(
-    (m) => !queueMusicIds.has(m.id)
-  );
 
   if (loading) {
     return (
@@ -955,17 +949,15 @@ const QueuePanel: React.FC = () => {
                 <div className="flex items-center justify-center h-full">
                   <p className="text-gray-500">Loading music...</p>
                 </div>
-              ) : addableMusic.length === 0 ? (
+              ) : filteredAvailableMusic.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <p className="text-gray-500 text-center">
-                    {searchMusicTerm
-                      ? "No matching music found"
-                      : "All available music is already in your queue"}
+                    {searchMusicTerm ? "No matching music found" : "No music available"}
                   </p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {addableMusic.map((music) => (
+                  {filteredAvailableMusic.map((music) => (
                     <div
                       key={music.id}
                       onClick={() => toggleMusicSelection(music.id)}
