@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -10,6 +9,8 @@ import {
 } from "../ui/table";
 import Badge from "../ui/badge/Badge";
 import Image from "next/image";
+import { useEffect, useState } from "react";
+import axiosClient from "@/utils/axiosClient";
 
 interface Song {
   id: number;
@@ -17,6 +18,19 @@ interface Song {
   artist: string;
   duration: string;
   cover: string;
+}
+
+interface Playlist {
+  id: string;
+  name: string;
+  coverUrl?: string | null;
+  userId: string;
+  isPublic: boolean;
+  createdAt: string;
+  updatedAt: string;
+  totalDurationSeconds: number;
+  trackCount: number;
+  description?: string;
 }
 
 const recentlyPlayedData: Song[] = [
@@ -57,15 +71,72 @@ const recentlyPlayedData: Song[] = [
   },
 ];
 
-const playlistData: Song[] = [
-  { id: 1, title: "Ariana Grande", artist: "", duration: "", cover: "/images/music/ariana.svg" },
-  { id: 2, title: "The Weeknd", artist: "", duration: "", cover: "/images/music/starboy.svg" },
-  { id: 3, title: "Acidrap", artist: "", duration: "", cover: "/images/music/acidrap.svg" },
-  { id: 4, title: "Ariana Grande", artist: "", duration: "", cover: "/images/music/ariana.svg" },
-  { id: 5, title: "The Weeknd", artist: "", duration: "", cover: "/images/music/starboy.svg" },
-];
+function pickColorForText(text?: string) {
+  const palette = [
+    "#EF4444",
+    "#F97316",
+    "#F59E0B",
+    "#10B981",
+    "#06B6D4",
+    "#3B82F6",
+    "#6366F1",
+    "#8B5CF6",
+    "#EC4899",
+    "#14B8A6",
+  ];
+  if (!text) return palette[0];
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash << 5) - hash + text.charCodeAt(i);
+    hash |= 0;
+  }
+  return palette[Math.abs(hash) % palette.length];
+}
+
+function generatePlaceholderCover(text?: string, size = 120) {
+  const color = pickColorForText(text);
+  const initials = (text || "P")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((t) => (t ? t[0].toUpperCase() : ""))
+    .join("");
+  const fontSize = Math.floor(size * 0.28);
+  const rx = Math.floor(size * 0.06);
+
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 ${size} ${size}'>
+    <rect width='100%' height='100%' fill='${color}' rx='${rx}' ry='${rx}'/>
+    <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='Inter, Roboto, Arial, sans-serif' font-weight='600' font-size='${fontSize}' fill='#ffffff'>${initials}</text>
+  </svg>`;
+
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
 
 export default function RecentOrders() {
+  const [playlistData, setPlaylistData] = useState<Playlist[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchPlaylists = async () => {
+      try {
+        setLoading(true);
+        const response = await axiosClient.get("/api/v1/playlists");
+
+        if (response.data.success && response.data.data.data) {
+          setPlaylistData(response.data.data.data);
+        }
+      } catch (err) {
+        console.error("Error fetching playlists:", err);
+        setError("Failed to load playlists");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPlaylists();
+  }, []);
+
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-4 pb-3 pt-4 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6">
       <div className="mb-4">
@@ -142,46 +213,80 @@ export default function RecentOrders() {
       {/* Play list carousel */}
       <div className="mt-8">
         <div className="flex items-center justify-between mb-3">
-          <h4 className="text-lg font-semibold text-gray-800">Play list</h4>
+          <h4 className="text-lg font-semibold text-gray-800 dark:text-white/90">Play list</h4>
           <button className="text-orange-500 font-medium hover:underline">See All</button>
         </div>
 
-        <div className="relative">
-          <button
-            aria-label="prev-playlist"
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-white shadow-md flex items-center justify-center -ml-4"
-            onClick={() => {
-              const el = document.getElementById('playlist-scroll');
-              if (el) el.scrollBy({ left: -300, behavior: 'smooth' });
-            }}
-          >
-            <span className="text-gray-500">‹</span>
-          </button>
-
-          <div id="playlist-scroll" className="no-scrollbar flex gap-8 overflow-x-auto pb-4 pl-8">
-            {playlistData.map((s) => (
-              <div key={s.id} className="w-[120px] shrink-0 text-center">
-                <div className="h-[120px] w-[120px] mx-auto overflow-hidden rounded-full shadow-sm">
-                  <Image src={s.cover} width={120} height={120} alt={s.title} />
-                </div>
-                <p className="mt-3 font-medium text-gray-800 text-sm">{s.title}</p>
-              </div>
-            ))}
+        {loading && (
+          <div className="flex justify-center py-8">
+            <p className="text-gray-500">Loading playlists...</p>
           </div>
+        )}
 
-          <button
-            aria-label="next-playlist"
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-white shadow-md flex items-center justify-center -mr-4"
-            onClick={() => {
-              const el = document.getElementById('playlist-scroll');
-              if (el) el.scrollBy({ left: 300, behavior: 'smooth' });
-            }}
-          >
-            <span className="text-gray-500">›</span>
-          </button>
-        </div>
+        {error && (
+          <div className="flex justify-center py-8">
+            <p className="text-red-500">{error}</p>
+          </div>
+        )}
+
+        {!loading && !error && playlistData.length === 0 && (
+          <div className="flex justify-center py-8">
+            <p className="text-gray-500">No playlists found</p>
+          </div>
+        )}
+
+        {!loading && !error && playlistData.length > 0 && (
+          <div className="relative">
+            <button
+              aria-label="prev-playlist"
+              className="absolute left-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-white shadow-md flex items-center justify-center -ml-4"
+              onClick={() => {
+                const el = document.getElementById('playlist-scroll');
+                if (el) el.scrollBy({ left: -300, behavior: 'smooth' });
+              }}
+            >
+              <span className="text-gray-500">‹</span>
+            </button>
+
+            <div id="playlist-scroll" className="no-scrollbar flex gap-8 overflow-x-auto pb-4 pl-8">
+              {playlistData.map((playlist) => (
+                <div key={playlist.id} className="w-[120px] shrink-0">
+                  <div className="h-[120px] w-[120px] overflow-hidden rounded-full shadow-sm">
+                    <img
+                      src={
+                        playlist.coverUrl
+                          ? playlist.coverUrl
+                          : generatePlaceholderCover(playlist.name, 120)
+                      }
+                      width={120}
+                      height={120}
+                      alt={playlist.name}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <p className="mt-3 font-medium text-gray-800 text-sm text-center truncate dark:text-white/90">
+                    {playlist.name}
+                  </p>
+                  <p className="text-gray-500 text-xs text-center dark:text-white/60">
+                    {playlist.trackCount} tracks
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <button
+              aria-label="next-playlist"
+              className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-white shadow-md flex items-center justify-center -mr-4"
+              onClick={() => {
+                const el = document.getElementById('playlist-scroll');
+                if (el) el.scrollBy({ left: 300, behavior: 'smooth' });
+              }}
+            >
+              <span className="text-gray-500">›</span>
+            </button>
+          </div>
+        )}
       </div>
-
     </div>
   );
 }
