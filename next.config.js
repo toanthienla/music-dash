@@ -15,6 +15,7 @@ const nextConfig = {
       issuer: /\.[jt]sx?$/,
       use: ["@svgr/webpack"],
     });
+
     return config;
   },
 
@@ -22,6 +23,7 @@ const nextConfig = {
     middlewareClientMaxBodySize: 100 * 1024 * 1024, // 100 MB
   },
 
+  // Rewrites for API proxy (bypass CORS)
   async rewrites() {
     return [
       {
@@ -32,4 +34,4 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
