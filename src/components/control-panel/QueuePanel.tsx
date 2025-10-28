@@ -265,11 +265,14 @@ const QueuePanel: React.FC = () => {
     }
   };
 
-  // Handle audio ended event
+  // Handle audio ended event - calls next API if playing
   const handleEnded = useCallback(async () => {
     console.log("Song ended, moving to next");
-    await handleNextSong();
-  }, []);
+    // Only auto-play next if currently playing
+    if (isPlaying) {
+      await handleNextSong();
+    }
+  }, [isPlaying]);
 
   // Handle time update event - rounds time for clean display
   const handleTimeUpdate = useCallback(() => {
@@ -313,7 +316,7 @@ const QueuePanel: React.FC = () => {
         // Cleanup is handled separately on unmount
       };
     }
-  }, [currentSong?.id, handleEnded, handleTimeUpdate]); // FIXED: Removed isPlaying from dependencies
+  }, [currentSong?.id, handleEnded, handleTimeUpdate]);
 
   // Handle play/pause state - DO NOT modify currentTime here
   useEffect(() => {
@@ -358,6 +361,7 @@ const QueuePanel: React.FC = () => {
     try {
       // Don't proceed if already on last song
       if (isNextDisabled) {
+        console.log("Already on last song, cannot play next");
         return;
       }
 
@@ -367,12 +371,18 @@ const QueuePanel: React.FC = () => {
         throw new Error("Session token not found");
       }
 
+      console.log("Calling next song API...");
+
       const response = await axiosClient.post(
         `/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/next`
       );
 
+      console.log("Next song response:", response.data);
+
       if (response.data?.success && response.data?.data) {
         const queuePosition = response.data.data.queue_position || 0;
+
+        console.log("New queue position:", queuePosition);
 
         if (queue.length > 0 && queuePosition < queue.length) {
           setCurrentQueueIndex(queuePosition);
