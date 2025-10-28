@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 
+/** @type {import('next').NextConfig} */
 const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
@@ -19,12 +20,11 @@ const nextConfig: NextConfig = {
     return config;
   },
 
-  // Allow larger upload requests (default is 10MB)
   experimental: {
     middlewareClientMaxBodySize: 100 * 1024 * 1024, // 100 MB
   },
 
-  // Proxy API requests to external service to bypass CORS
+  // Rewrites for proxying API requests (bypasses CORS)
   async rewrites() {
     return [
       {
