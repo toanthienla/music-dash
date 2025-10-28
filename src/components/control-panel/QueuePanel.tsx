@@ -433,7 +433,7 @@ const QueuePanel: React.FC = () => {
     }
   };
 
-  // Handle skip backward (10 seconds) - NOW USES ABSOLUTE SEEK
+  // Handle skip backward (10 seconds) - USES SEEK-BACKWARD ENDPOINT
   const handleSkipBackward = async () => {
     try {
       setIsPlaybackSeeking(true);
@@ -446,13 +446,16 @@ const QueuePanel: React.FC = () => {
 
       // Calculate new position (10 seconds backward, but not less than 0)
       const newPositionSeconds = Math.max(0, audioRef.current.currentTime - 10);
-      const newPositionMs = Math.round(newPositionSeconds * 1000);
 
-      // Call seek API with absolute position
-      await axiosClient.post(
-        `/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/seek`,
-        { position_ms: newPositionMs }
+      console.log("Seeking backward 10 seconds...");
+
+      // Call seek-backward API with delta_ms
+      const response = await axiosClient.post(
+        `/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/seek-backward`,
+        { delta_ms: 10000 }
       );
+
+      console.log("Seek backward response:", response.data);
 
       // Update local audio position
       audioRef.current.currentTime = newPositionSeconds;
@@ -464,7 +467,7 @@ const QueuePanel: React.FC = () => {
     }
   };
 
-  // Handle skip forward (10 seconds) - NOW USES ABSOLUTE SEEK
+  // Handle skip forward (10 seconds) - USES SEEK-FORWARD ENDPOINT
   const handleSkipForward = async () => {
     try {
       setIsPlaybackSeeking(true);
@@ -480,13 +483,16 @@ const QueuePanel: React.FC = () => {
         currentSong.durationSeconds,
         audioRef.current.currentTime + 10
       );
-      const newPositionMs = Math.round(newPositionSeconds * 1000);
 
-      // Call seek API with absolute position
-      await axiosClient.post(
-        `/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/seek`,
-        { position_ms: newPositionMs }
+      console.log("Seeking forward 10 seconds...");
+
+      // Call seek-forward API with delta_ms
+      const response = await axiosClient.post(
+        `/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/seek-forward`,
+        { delta_ms: 10000 }
       );
+
+      console.log("Seek forward response:", response.data);
 
       // Update local audio position
       audioRef.current.currentTime = newPositionSeconds;
@@ -498,7 +504,7 @@ const QueuePanel: React.FC = () => {
     }
   };
 
-  // Handle progress bar click - NOW USES ABSOLUTE SEEK
+  // Handle progress bar click - USES ABSOLUTE SEEK
   const handleProgressClick = async (e: React.MouseEvent<HTMLDivElement>) => {
     try {
       if (!currentSong || !audioRef.current) return;
@@ -513,6 +519,8 @@ const QueuePanel: React.FC = () => {
       const percent = (e.clientX - rect.left) / rect.width;
       const newPositionSeconds = percent * currentSong.durationSeconds;
       const newPositionMs = Math.round(newPositionSeconds * 1000);
+
+      console.log("Seeking to position:", newPositionMs, "ms");
 
       // Call seek API with absolute position
       await axiosClient.post(
