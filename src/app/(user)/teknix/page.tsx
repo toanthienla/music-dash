@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import axiosClient from "@/utils/axiosClient";
+import { MOCK_API_URL } from "@/utils/constants";
 
 export default function TestApiPage() {
   const [data, setData] = useState<any>(null);
@@ -11,7 +12,7 @@ export default function TestApiPage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const response = await axiosClient.get('/api/v1/music');
+        const response = await axiosClient.get(`${MOCK_API_URL}/api/v1/music`);
         setData(response.data);
       } catch (err: any) {
         setError(err.message || 'API call failed');

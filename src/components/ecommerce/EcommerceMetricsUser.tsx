@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import mockapi from "@/utils/mockapi";
+import axiosClient from "@/utils/axiosClient";
 import Badge from "../ui/badge/Badge";
 import { ArrowDownIcon, Clock, Tick } from "@/icons";
 import { MOCK_API_URL } from "@/utils/constants";
@@ -19,7 +19,7 @@ export const EcommerceMetrics = () => {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await mockapi.get(`${MOCK_API_URL}/api/v1/devices/status`, {
+        const res = await axiosClient.get(`${MOCK_API_URL}/api/v1/devices/status`, {
           withCredentials: true,
         });
         console.log("Device stats:", res.data.data);

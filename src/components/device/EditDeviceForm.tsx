@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import Switch from "../form/switch/Switch";
-import mockapi from "@/utils/mockapi";
+import axiosClient from "@/utils/axiosClient";
 import { MOCK_API_URL } from "@/utils/constants";
 
 interface Device {
@@ -39,7 +39,7 @@ export default function EditDeviceForm({ open, device, onClose, onSave }: Props)
       const fetchDevice = async () => {
         setLoading(true);
         try {
-          const res = await mockapi.get(
+          const res = await axiosClient.get(
             `${MOCK_API_URL}/api/v1/alldevices/${device.id}`
           );
           const data = res.data?.data || res.data;
@@ -87,7 +87,7 @@ export default function EditDeviceForm({ open, device, onClose, onSave }: Props)
 
       console.log("PUT PAYLOAD:", payload);
 
-      const res = await mockapi.put(
+      const res = await axiosClient.put(
         `${MOCK_API_URL}/api/v1/devices/${form.id}`,
         payload,
         {

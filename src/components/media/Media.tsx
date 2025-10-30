@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import axiosClient from "@/utils/axiosClient";
-import { TEKNIX_USER_SESSION_TOKEN } from "@/utils/constants";
+import { TEKNIX_USER_SESSION_TOKEN, MOCK_API_URL } from "@/utils/constants";
 
 import PaginationWithTextWitIcon from "../ui/pagination/PaginationWithTextWitIcon";
 import { TrashBinIcon } from "@/icons";
@@ -46,10 +46,10 @@ type PlaylistFormData = {
 };
 
 // ===== API config =====
-const MUSIC_API_URL = `/api/v1/music`;
-const MUSIC_UPLOAD_API_URL = `/api/v1/music/upload`;
-const PLAYLISTS_API_URL = `/api/v1/playlists`;
-const QUEUE_API_URL = `/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`;
+const MUSIC_API_URL = `${MOCK_API_URL}/api/v1/music`;
+const MUSIC_UPLOAD_API_URL = `${MOCK_API_URL}/api/v1/music/upload`;
+const PLAYLISTS_API_URL = `${MOCK_API_URL}/api/v1/playlists`;
+const QUEUE_API_URL = `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`;
 
 export default function BasicTableOne() {
   // Pagination state - Music

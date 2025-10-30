@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import PaginationWithTextWitIcon from "../ui/pagination/PaginationWithTextWitIcon";
 import Image from "next/image";
 import Checkbox from "../form/input/Checkbox";
-import mockapi from "@/utils/mockapi";
+import axiosClient from "@/utils/axiosClient";
 import { MOCK_API_URL } from "@/utils/constants";
 
 type Device = {
@@ -128,7 +128,7 @@ export default function AddGroupForm({
 
         console.log("🔹 Sending payload:", payload);
 
-        const res = await mockapi.post(
+        const res = await axiosClient.post(
           `${MOCK_API_URL}/api/v1/devices`,
           payload,
           { headers: { "Content-Type": "application/json" } }

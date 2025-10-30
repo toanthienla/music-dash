@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import mockapi from "@/utils/mockapi";
+import axiosClient from "@/utils/axiosClient";
 import dynamic from "next/dynamic";
 import { worldMill } from "@react-jvectormap/world";
 import { MOCK_API_URL } from "@/utils/constants";
@@ -40,7 +40,7 @@ const CountryMap: React.FC<CountryMapProps> = ({ mapColor }) => {
   useEffect(() => {
     const fetchLocations = async () => {
       try {
-        const res = await mockapi.get<{ data: DeviceLocation[] }>(
+        const res = await axiosClient.get<{ data: DeviceLocation[] }>(
           `${MOCK_API_URL}/api/v1/devices/location`,
           { withCredentials: true }
         );

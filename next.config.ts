@@ -41,15 +41,6 @@ const nextConfig: NextConfig = {
   experimental: {
     middlewareClientMaxBodySize: 100 * 1024 * 1024, // 100 MB
   },
-
-  async rewrites() {
-    return [
-      {
-        source: "/api/v1/:path*",
-        destination: "https://musicplayer.blocktrend.xyz/api/v1/:path*",
-      },
-    ];
-  },
 };
 
 export default nextConfig;

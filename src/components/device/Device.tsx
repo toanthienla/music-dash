@@ -6,7 +6,7 @@ import PaginationWithTextWitIcon from "../ui/pagination/PaginationWithTextWitIco
 import { AngleDownIcon, AngleUpIcon, PencilIcon } from "@/icons";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "../ui/table";
 import Switch from "../form/switch/Switch";
-import { TEKNIX_USER_SESSION_TOKEN } from "@/utils/constants";
+import { TEKNIX_USER_SESSION_TOKEN, MOCK_API_URL } from "@/utils/constants";
 import axiosClient from "@/utils/axiosClient";
 
 type Device = {
@@ -275,7 +275,7 @@ const RegisterDeviceModal: React.FC<RegisterDeviceModalProps> = ({
 
     try {
       const response = await axiosClient.post<ApiResponse<any>>(
-        "/api/v1/devices/register",
+        `${MOCK_API_URL}/api/v1/devices/register`,
         formData
       );
 
@@ -608,7 +608,7 @@ export default function BasicTableOne() {
   /**
    * Fetch devices from session-specific API endpoint
    * Uses axiosClient with session authentication
-   * Endpoint: /api/v1/sessions/{sessionId}/devices
+   * Endpoint: ${MOCK_API_URL}/api/v1/sessions/{sessionId}/devices
    */
   const fetchDevices = async () => {
     setLoading(true);
@@ -622,7 +622,7 @@ export default function BasicTableOne() {
       }
 
       // Construct API endpoint
-      const endpoint = `/api/v1/sessions/${sessionToken}/devices`;
+      const endpoint = `${MOCK_API_URL}/api/v1/sessions/${sessionToken}/devices`;
 
       console.log(`[Devices] Fetching from: ${endpoint}`);
 

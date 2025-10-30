@@ -7,6 +7,7 @@ import axiosClient from "@/utils/axiosClient";
 import PaginationWithTextWitIcon from "../ui/pagination/PaginationWithTextWitIcon";
 import Checkbox from "../form/input/Checkbox";
 import { Modal } from "../ui/modal";
+import { MOCK_API_URL } from "@/utils/constants";
 
 type SongItem = {
   id: string;
@@ -153,7 +154,7 @@ export default function PlaylistDetail({ id }: { id: string }) {
   const fetchAvailableMusic = async () => {
     try {
       setLoadingAvailableMusic(true);
-      const response = await axiosClient.get("/api/v1/music");
+      const response = await axiosClient.get(`${MOCK_API_URL}/api/v1/music`);
 
       const raw = response.data;
       if (!raw?.success || !raw?.data?.data || !Array.isArray(raw.data.data)) {
@@ -196,12 +197,12 @@ export default function PlaylistDetail({ id }: { id: string }) {
 
       // Send single request with all musicIds
       await axiosClient.post(
-        `/api/v1/playlists/${playlist.id}/tracks`,
+        `${MOCK_API_URL}/api/v1/playlists/${playlist.id}/tracks`,
         { musicIds }
       );
 
       // Refresh playlist data
-      const response = await axiosClient.get(`/api/v1/playlists/${playlist.id}`);
+      const response = await axiosClient.get(`${MOCK_API_URL}/api/v1/playlists/${playlist.id}`);
 
       const raw = response.data;
       const data: PlaylistResponse | undefined = raw?.data ?? raw;
@@ -245,7 +246,7 @@ export default function PlaylistDetail({ id }: { id: string }) {
       setLoading(true);
       setError(null);
       try {
-        const resp = await axiosClient.get(`/api/v1/playlists/${id}`);
+        const resp = await axiosClient.get(`${MOCK_API_URL}/api/v1/playlists/${id}`);
 
         const raw = resp?.data;
         const data: PlaylistResponse | undefined = raw?.data ?? raw;

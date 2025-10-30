@@ -2,7 +2,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import React, { useEffect, useState } from "react";
-import mockapi from "@/utils/mockapi";
+import axiosClient from "@/utils/axiosClient";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { MOCK_API_URL } from "@/utils/constants";
@@ -24,7 +24,7 @@ export default function NotificationDropdown() {
   useEffect(() => {
     const fetchNotifications = async () => {
       try {
-        const res = await mockapi.get(`${MOCK_API_URL}/api/v1/user/notifications`, {
+        const res = await axiosClient.get(`${MOCK_API_URL}/api/v1/user/notifications`, {
           withCredentials: true,
         });
         console.log("Notifications API response:", res.data.data);

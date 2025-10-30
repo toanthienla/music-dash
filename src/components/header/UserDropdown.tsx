@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import React, { useState, useEffect } from "react";
-import mockapi from "@/utils/mockapi";
+import axiosClient from "@/utils/axiosClient";
 
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
@@ -34,7 +34,7 @@ export default function UserDropdown() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const res = await mockapi.get(`${MOCK_API_URL}/api/v1/user/profile`, {
+        const res = await axiosClient.get(`${MOCK_API_URL}/api/v1/user/profile`, {
           withCredentials: true,
         });
         console.log("User API response:", res.data.data);
