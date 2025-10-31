@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import TerserPlugin from "terser-webpack-plugin";
 
 const nextConfig: NextConfig = {
   images: {
@@ -10,18 +11,8 @@ const nextConfig: NextConfig = {
     ],
   },
 
-  webpack: (config, { isServer, dev }) => {
-    if (!dev) {
-      if (config.optimization?.minimizer) {
-        config.optimization.minimizer.forEach((minimizer: any) => {
-          if (minimizer.constructor.name === "TerserPlugin") {
-            minimizer.options.terserOptions.compress.drop_console = true;
-            minimizer.options.terserOptions.compress.drop_debugger = true;
-          }
-        });
-      }
-    }
-
+  webpack: (config, { isServer }) => {
+    // Handle SVG files
     const imageRule = config.module.rules.find(
       (rule: any) => rule?.test?.toString().includes("svg")
     );
@@ -43,6 +34,24 @@ const nextConfig: NextConfig = {
         },
       ],
     });
+
+    // Properly configure TerserPlugin
+    if (!isServer) {
+      config.optimization = {
+        ...config.optimization,
+        minimize: true,
+        minimizer: [
+          new TerserPlugin({
+            terserOptions: {
+              compress: {
+                drop_console: true,
+                drop_debugger: true,
+              },
+            },
+          }),
+        ],
+      };
+    }
 
     return config;
   },

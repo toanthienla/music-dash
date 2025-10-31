@@ -37,7 +37,8 @@
     "simplebar-react": "^3.3.0",
     "swiper": "^11.2.0",
     "tailwind-merge": "^2.6.0",
-    "tailwindcss": "^4.0.0"
+    "tailwindcss": "^4.0.0",
+    "terser-webpack-plugin": "^5.3.14"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
