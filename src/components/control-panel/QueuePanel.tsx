@@ -167,6 +167,50 @@ const QueuePanel: React.FC = () => {
   // Check if next button should be disabled (last song)
   const isNextDisabled = currentQueueIndex === queue.length - 1 || queue.length === 0;
 
+  // ✅ MEMOIZED handleTimeUpdate - no dependencies
+  const handleTimeUpdate = useCallback(() => {
+    if (audioRef.current) {
+      const roundedTime = Math.round(audioRef.current.currentTime);
+      setCurrentTime(roundedTime);
+    }
+  }, []);
+
+  // ✅ MEMOIZED handleEnded - depends only on isPlaying
+  const handleEnded = useCallback(async () => {
+    // If last song, stop playback
+    if (currentQueueIndex === queue.length - 1 || queue.length === 0) {
+      setIsPlaying(false);
+      return;
+    }
+
+    // Only auto-play next if currently playing
+    if (isPlaying) {
+      // Call next API
+      try {
+        if (!TEKNIX_USER_SESSION_TOKEN) {
+          throw new Error("Session token not found");
+        }
+
+        const response = await axiosClient.post(
+          `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/next`
+        );
+
+        if (response.data?.success && response.data?.data) {
+          const queuePosition = response.data.data.queue_position || 0;
+
+          if (queue.length > 0 && queuePosition < queue.length) {
+            setCurrentQueueIndex(queuePosition);
+            setCurrentSong(queue[queuePosition]);
+            setCurrentTime(0);
+            setIsPlaying(true);
+          }
+        }
+      } catch (err: any) {
+        console.error("Error playing next song:", err);
+      }
+    }
+  }, [isPlaying, queue]);
+
   // Cleanup audio on unmount
   useEffect(() => {
     return () => {
@@ -265,25 +309,7 @@ const QueuePanel: React.FC = () => {
     }
   };
 
-  // Handle audio ended event - calls next API if playing
-  const handleEnded = useCallback(async () => {
-    console.log("Song ended, moving to next");
-    // Only auto-play next if currently playing
-    if (isPlaying) {
-      await handleNextSong();
-    }
-  }, [isPlaying]);
-
-  // Handle time update event - rounds time for clean display
-  const handleTimeUpdate = useCallback(() => {
-    if (audioRef.current) {
-      // Round to nearest second for clean display
-      const roundedTime = Math.round(audioRef.current.currentTime);
-      setCurrentTime(roundedTime);
-    }
-  }, []);
-
-  // Initialize audio element when current song changes
+  // ✅ FIXED: Initialize audio element ONLY when currentSong changes (by ID)
   useEffect(() => {
     if (currentSong && currentSong.fileUrl) {
       // Clean up existing audio element
@@ -316,7 +342,7 @@ const QueuePanel: React.FC = () => {
         // Cleanup is handled separately on unmount
       };
     }
-  }, [currentSong?.id, handleEnded, handleTimeUpdate]);
+  }, [currentSong?.id]); // ✅ ONLY depend on song ID, NOT on callbacks!
 
   // Handle play/pause state - DO NOT modify currentTime here
   useEffect(() => {

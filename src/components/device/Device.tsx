@@ -26,14 +26,10 @@ type Device = {
   enabled: boolean; // is_online
 };
 
-// Device registration form data
+// ✅ SIMPLIFIED Device registration form data
 type DeviceRegistrationForm = {
-  device_id: string;
   name: string;
-  type: string;
-  model: string;
-  mac_address: string;
-  firmware_version: string;
+  pairing_code: string;
 };
 
 // API response types
@@ -210,6 +206,7 @@ const formatDateTime = (dateString: string): string => {
 
 /**
  * RegisterDeviceModal Component
+ * ✅ SIMPLIFIED: Only 2 fields - name and pairing_code
  * Side panel modal for registering a new device
  * Design inspired by AddGroupForm
  */
@@ -224,13 +221,10 @@ const RegisterDeviceModal: React.FC<RegisterDeviceModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  // ✅ SIMPLIFIED form state
   const [formData, setFormData] = useState<DeviceRegistrationForm>({
-    device_id: "",
     name: "",
-    type: "",
-    model: "",
-    mac_address: "",
-    firmware_version: "",
+    pairing_code: "",
   });
 
   const [loading, setLoading] = useState(false);
@@ -247,15 +241,9 @@ const RegisterDeviceModal: React.FC<RegisterDeviceModalProps> = ({
     if (error) setError(null);
   };
 
+  // ✅ SIMPLIFIED validation
   const validateForm = (): boolean => {
-    if (
-      !formData.device_id.trim() ||
-      !formData.name.trim() ||
-      !formData.type.trim() ||
-      !formData.model.trim() ||
-      !formData.mac_address.trim() ||
-      !formData.firmware_version.trim()
-    ) {
+    if (!formData.name.trim() || !formData.pairing_code.trim()) {
       setError("All fields are required");
       return false;
     }
@@ -284,13 +272,10 @@ const RegisterDeviceModal: React.FC<RegisterDeviceModalProps> = ({
       }
 
       setSuccess(true);
+      // ✅ SIMPLIFIED reset form
       setFormData({
-        device_id: "",
         name: "",
-        type: "",
-        model: "",
-        mac_address: "",
-        firmware_version: "",
+        pairing_code: "",
       });
 
       // Close modal after 2 seconds
@@ -398,25 +383,8 @@ const RegisterDeviceModal: React.FC<RegisterDeviceModalProps> = ({
           </div>
         )}
 
-        {/* Form */}
+        {/* ✅ SIMPLIFIED Form - Only 2 Fields */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Device ID */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Device ID
-            </label>
-            <input
-              type="text"
-              name="device_id"
-              value={formData.device_id}
-              onChange={handleChange}
-              placeholder="Enter unique device ID"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white bg-white text-gray-900 transition-colors"
-              disabled={loading}
-              required
-            />
-          </div>
-
           {/* Device Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -434,68 +402,17 @@ const RegisterDeviceModal: React.FC<RegisterDeviceModalProps> = ({
             />
           </div>
 
-          {/* Type */}
+          {/* Pairing Code */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Type
+              Pairing Code
             </label>
             <input
               type="text"
-              name="type"
-              value={formData.type}
+              name="pairing_code"
+              value={formData.pairing_code}
               onChange={handleChange}
-              placeholder="e.g., Speaker, Microphone"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white bg-white text-gray-900 transition-colors"
-              disabled={loading}
-              required
-            />
-          </div>
-
-          {/* Model */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Model
-            </label>
-            <input
-              type="text"
-              name="model"
-              value={formData.model}
-              onChange={handleChange}
-              placeholder="e.g., Model X1"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white bg-white text-gray-900 transition-colors"
-              disabled={loading}
-              required
-            />
-          </div>
-
-          {/* MAC Address */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              MAC Address
-            </label>
-            <input
-              type="text"
-              name="mac_address"
-              value={formData.mac_address}
-              onChange={handleChange}
-              placeholder="e.g., 02:5A:F3:B9:E1:C4"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white bg-white text-gray-900 transition-colors"
-              disabled={loading}
-              required
-            />
-          </div>
-
-          {/* Firmware Version */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Firmware Version
-            </label>
-            <input
-              type="text"
-              name="firmware_version"
-              value={formData.firmware_version}
-              onChange={handleChange}
-              placeholder="e.g., 1.0"
+              placeholder="e.g., 925517"
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white bg-white text-gray-900 transition-colors"
               disabled={loading}
               required

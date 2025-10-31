@@ -10,8 +10,18 @@ const nextConfig: NextConfig = {
     ],
   },
 
-  webpack: (config, { isServer }) => {
-    // Find the existing SVG rule and disable it
+  webpack: (config, { isServer, dev }) => {
+    if (!dev) {
+      if (config.optimization?.minimizer) {
+        config.optimization.minimizer.forEach((minimizer: any) => {
+          if (minimizer.constructor.name === "TerserPlugin") {
+            minimizer.options.terserOptions.compress.drop_console = true;
+            minimizer.options.terserOptions.compress.drop_debugger = true;
+          }
+        });
+      }
+    }
+
     const imageRule = config.module.rules.find(
       (rule: any) => rule?.test?.toString().includes("svg")
     );
@@ -20,7 +30,6 @@ const nextConfig: NextConfig = {
       imageRule.exclude = /\.svg$/i;
     }
 
-    // Add SVGR webpack loader - MUST be FIRST
     config.module.rules.unshift({
       test: /\.svg$/i,
       use: [
