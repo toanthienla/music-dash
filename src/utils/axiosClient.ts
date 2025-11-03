@@ -1,9 +1,7 @@
 import axios from "axios";
 import { MOCK_USER_ACCESS_TOKEN, TEKNIX_USER_ACCESS_TOKEN } from "@/utils/constants";
 
-const axiosClient = axios.create({
-  timeout: 60000,
-});
+const axiosClient = axios.create();
 
 // Automatically attach Authorization header
 axiosClient.interceptors.request.use((config) => {
