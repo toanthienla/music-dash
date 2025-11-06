@@ -2,11 +2,17 @@ import type { NextConfig } from "next";
 import TerserPlugin from "terser-webpack-plugin";
 
 const nextConfig: NextConfig = {
+  reactStrictMode: false,
+
   images: {
     remotePatterns: [
       {
         protocol: "https",
         hostname: "res.cloudinary.com",
+      },
+      {
+        protocol: "https",
+        hostname: "iotek.tn-cdn.net",
       },
     ],
   },

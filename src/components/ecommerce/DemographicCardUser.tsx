@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import axiosClient from "@/utils/axiosClient";
-import { TEKNIX_USER_SESSION_TOKEN, MOCK_API_URL } from "@/utils/constants";
+import { TEKNIX_USER_SESSION_TOKEN, API_URL } from "@/utils/constants";
 import CountryMap from "./CountryMap";
 import {
   Table,
@@ -155,7 +155,7 @@ export default function DemographicCard() {
           throw new Error("Session token not found. Please log in again.");
         }
 
-        const endpoint = `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/devices`;
+        const endpoint = `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/devices`;
 
         console.log(`[DemographicCard] Fetching devices from: ${endpoint}`);
 

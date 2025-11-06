@@ -11,7 +11,7 @@ import Badge from "../ui/badge/Badge";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import axiosClient from "@/utils/axiosClient";
-import { MOCK_API_URL } from "@/utils/constants";
+import { API_URL } from "@/utils/constants";
 
 interface Music {
   id: string;
@@ -110,7 +110,7 @@ export default function RecentOrders() {
       try {
         setLoadingRecent(true);
         setErrorRecent(null);
-        const response = await axiosClient.get(`${MOCK_API_URL}/api/v1/music/recently-played`);
+        const response = await axiosClient.get(`${API_URL}/api/v1/music/recently-played`);
 
         if (response.data.success && response.data.data?.data) {
           setRecentlyPlayedData(response.data.data.data);
@@ -131,7 +131,7 @@ export default function RecentOrders() {
       try {
         setLoadingPlaylists(true);
         setErrorPlaylists(null);
-        const response = await axiosClient.get(`${MOCK_API_URL}/api/v1/playlists`);
+        const response = await axiosClient.get(`${API_URL}/api/v1/playlists`);
 
         if (response.data.success && response.data.data?.data) {
           setPlaylistData(response.data.data.data);

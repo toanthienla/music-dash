@@ -19,7 +19,7 @@ import {
   Trash2,
 } from "lucide-react";
 import axiosClient from "@/utils/axiosClient";
-import { TEKNIX_USER_SESSION_TOKEN, TEKNIX_MUSIC_URL, MOCK_API_URL } from "@/utils/constants";
+import { TEKNIX_USER_SESSION_TOKEN, IOT_BASE_URL, API_URL } from "@/utils/constants";
 
 interface QueueSong {
   id: string;
@@ -158,7 +158,7 @@ const QueuePanel: React.FC = () => {
 
   // Generate music URL from storage key
   const getMusicUrl = useCallback((storageKey: string): string => {
-    return `${TEKNIX_MUSIC_URL}/${storageKey}`;
+    return `${IOT_BASE_URL}/${storageKey}`;
   }, []);
 
   // Check if previous button should be disabled (first song)
@@ -192,7 +192,7 @@ const QueuePanel: React.FC = () => {
         }
 
         const response = await axiosClient.post(
-          `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/next`
+          `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/next`
         );
 
         if (response.data?.success && response.data?.data) {
@@ -239,7 +239,7 @@ const QueuePanel: React.FC = () => {
         // Send stop request to reset playback position to 0
         try {
           await axiosClient.post(
-            `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/stop`
+            `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/stop`
           );
           console.log("Playback position reset to 0");
         } catch (stopErr: any) {
@@ -249,7 +249,7 @@ const QueuePanel: React.FC = () => {
 
         // Fetch queue data
         const response = await axiosClient.get(
-          `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`
+          `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`
         );
 
         if (response.data?.success && response.data?.data?.queue) {
@@ -297,7 +297,7 @@ const QueuePanel: React.FC = () => {
   const fetchAvailableMusic = async () => {
     try {
       setLoadingMusic(true);
-      const response = await axiosClient.get(`${MOCK_API_URL}/api/v1/music`);
+      const response = await axiosClient.get(`${API_URL}/api/v1/music`);
 
       if (response.data?.success && response.data?.data?.data) {
         setAvailableMusic(response.data.data.data);
@@ -366,14 +366,14 @@ const QueuePanel: React.FC = () => {
       if (isPlaying) {
         // Send pause request
         await axiosClient.post(
-          `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/pause`
+          `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/pause`
         );
         // IMPORTANT: Do NOT reset currentTime - only change isPlaying state
         setIsPlaying(false);
       } else {
         // Send play request WITHOUT payload
         await axiosClient.post(
-          `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/play`
+          `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/play`
         );
         setIsPlaying(true);
       }
@@ -400,7 +400,7 @@ const QueuePanel: React.FC = () => {
       console.log("Calling next song API...");
 
       const response = await axiosClient.post(
-        `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/next`
+        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/next`
       );
 
       console.log("Next song response:", response.data);
@@ -439,7 +439,7 @@ const QueuePanel: React.FC = () => {
       }
 
       const response = await axiosClient.post(
-        `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/previous`
+        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/previous`
       );
 
       if (response.data?.success && response.data?.data) {
@@ -477,7 +477,7 @@ const QueuePanel: React.FC = () => {
 
       // Call seek-backward API with delta_ms
       const response = await axiosClient.post(
-        `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/seek-backward`,
+        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/seek-backward`,
         { delta_ms: 10000 }
       );
 
@@ -514,7 +514,7 @@ const QueuePanel: React.FC = () => {
 
       // Call seek-forward API with delta_ms
       const response = await axiosClient.post(
-        `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/seek-forward`,
+        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/seek-forward`,
         { delta_ms: 10000 }
       );
 
@@ -550,7 +550,7 @@ const QueuePanel: React.FC = () => {
 
       // Call seek API with absolute position
       await axiosClient.post(
-        `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/seek`,
+        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/seek`,
         { position_ms: newPositionMs }
       );
 
@@ -579,7 +579,7 @@ const QueuePanel: React.FC = () => {
 
       // Send play-track request with queue position
       await axiosClient.post(
-        `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/play-track`,
+        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/play-track`,
         { queue_position: index }
       );
 
@@ -617,14 +617,14 @@ const QueuePanel: React.FC = () => {
       const musicIds = Array.from(selectedMusicIds);
 
       const response = await axiosClient.post(
-        `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`,
+        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`,
         { music_ids: musicIds }
       );
 
       if (response.data?.success) {
         // Refresh queue
         const queueResponse = await axiosClient.get(
-          `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`
+          `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`
         );
 
         if (queueResponse.data?.success && queueResponse.data?.data?.queue) {
@@ -675,13 +675,13 @@ const QueuePanel: React.FC = () => {
       }
 
       const response = await axiosClient.delete(
-        `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`
+        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`
       );
 
       if (response.data?.success) {
         // Send stop request
         await axiosClient.post(
-          `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/stop`
+          `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/stop`
         );
 
         // Stop audio
@@ -715,13 +715,13 @@ const QueuePanel: React.FC = () => {
       }
 
       const response = await axiosClient.delete(
-        `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue/${position}`
+        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue/${position}`
       );
 
       if (response.data?.success) {
         // Refresh queue
         const queueResponse = await axiosClient.get(
-          `${MOCK_API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`
+          `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`
         );
 
         if (queueResponse.data?.success && queueResponse.data?.data?.queue) {

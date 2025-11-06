@@ -1,15 +1,15 @@
 import axios from "axios";
-import { MOCK_USER_ACCESS_TOKEN, TEKNIX_USER_ACCESS_TOKEN } from "@/utils/constants";
+import { ACCESS_TOKEN, PROXY_ACCESS_TOKEN } from "@/utils/constants";
 
 const axiosClient = axios.create();
 
 // Automatically attach Authorization header
 axiosClient.interceptors.request.use((config) => {
-  if (MOCK_USER_ACCESS_TOKEN) {
-    config.headers.Authorization = `Bearer ${MOCK_USER_ACCESS_TOKEN}`;
+  if (ACCESS_TOKEN) {
+    config.headers.Authorization = `Bearer ${ACCESS_TOKEN}`;
   }
-  if (TEKNIX_USER_ACCESS_TOKEN) {
-    config.headers["X-Proxy-Authorization"] = `Bearer ${TEKNIX_USER_ACCESS_TOKEN}`;
+  if (PROXY_ACCESS_TOKEN) {
+    config.headers["X-Proxy-Authorization"] = `Bearer ${PROXY_ACCESS_TOKEN}`;
   }
   return config;
 });

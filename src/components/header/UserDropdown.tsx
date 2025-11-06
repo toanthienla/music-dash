@@ -7,7 +7,7 @@ import axiosClient from "@/utils/axiosClient";
 
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
-import { MOCK_API_URL } from "@/utils/constants"; // lấy base URL từ constants.ts
+import { API_URL } from "@/utils/constants"; // lấy base URL từ constants.ts
 
 // Kiểu dữ liệu user trả về từ API
 interface UserProfile {
@@ -34,7 +34,7 @@ export default function UserDropdown() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const res = await axiosClient.get(`${MOCK_API_URL}/api/v1/user/profile`, {
+        const res = await axiosClient.get(`${API_URL}/api/v1/user/profile`, {
           withCredentials: true,
         });
         console.log("User API response:", res.data.data);

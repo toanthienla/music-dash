@@ -7,7 +7,7 @@ import axiosClient from "@/utils/axiosClient";
 import PaginationWithTextWitIcon from "../ui/pagination/PaginationWithTextWitIcon";
 import Checkbox from "../form/input/Checkbox";
 import { Modal } from "../ui/modal";
-import { MOCK_API_URL } from "@/utils/constants";
+import { API_URL } from "@/utils/constants";
 
 type SongItem = {
   id: string;
@@ -28,6 +28,7 @@ type PlaylistResponse = {
   updatedAt?: string;
   totalDurationSeconds?: number;
   trackCount?: number;
+  coverUrl?: string | null;
   tracks?: Array<{
     id: string;
     music: {
@@ -63,8 +64,11 @@ export default function PlaylistDetail({ id }: { id: string }) {
   const [songs, setSongs] = React.useState<SongItem[]>([]);
 
   // ui state
-  const [loading, setLoading] = React.useState<boolean>(false);
+  const [loading, setLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [deletingIds, setDeletingIds] = React.useState<Set<string>>(new Set());
+  const [addMusicLoading, setAddMusicLoading] = React.useState(false);
+  const [addingMusic, setAddingMusic] = React.useState(false);
 
   // local selection & search
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
@@ -78,9 +82,10 @@ export default function PlaylistDetail({ id }: { id: string }) {
   const [isAddMusicOpen, setIsAddMusicOpen] = React.useState(false);
   const [availableMusic, setAvailableMusic] = React.useState<AvailableMusic[]>([]);
   const [selectedMusicToAdd, setSelectedMusicToAdd] = React.useState<Set<string>>(new Set());
-  const [loadingAvailableMusic, setLoadingAvailableMusic] = React.useState(false);
   const [addMusicSearch, setAddMusicSearch] = React.useState("");
-  const [addingMusic, setAddingMusic] = React.useState(false);
+
+  // Cover image error state
+  const [coverImageError, setCoverImageError] = React.useState(false);
 
   // --- Helpers ---
   const pad = (n: number) => n.toString().padStart(2, "0");
@@ -139,10 +144,29 @@ export default function PlaylistDetail({ id }: { id: string }) {
     setSelectedMusicToAdd(next);
   }
 
-  const handleDeleteSelected = () => {
+  const handleDeleteSelected = async () => {
     if (!selected || selected.size === 0) return;
-    setSongs((prev) => prev.filter((s) => !selected.has(s.id)));
-    setSelected(new Set());
+
+    if (!confirm(`Delete ${selected.size} track(s)?`)) return;
+
+    try {
+      const trackIds = Array.from(selected);
+      setDeletingIds(new Set(trackIds));
+
+      // Call API to delete selected tracks from playlist
+      for (const trackId of trackIds) {
+        await axiosClient.delete(`${API_URL}/api/v1/playlists/${id}/tracks/${trackId}`);
+      }
+
+      setSongs((prev) => prev.filter((s) => !selected.has(s.id)));
+      setSelected(new Set());
+      alert("Tracks deleted successfully!");
+    } catch (error: any) {
+      console.error("Error deleting tracks:", error);
+      alert(error?.response?.data?.message || "Failed to delete tracks");
+    } finally {
+      setDeletingIds(new Set());
+    }
   };
 
   // Get all music IDs already in the playlist
@@ -153,8 +177,8 @@ export default function PlaylistDetail({ id }: { id: string }) {
   // Fetch available music to add
   const fetchAvailableMusic = async () => {
     try {
-      setLoadingAvailableMusic(true);
-      const response = await axiosClient.get(`${MOCK_API_URL}/api/v1/music`);
+      setAddMusicLoading(true);
+      const response = await axiosClient.get(`${API_URL}/api/v1/music`);
 
       const raw = response.data;
       if (!raw?.success || !raw?.data?.data || !Array.isArray(raw.data.data)) {
@@ -181,7 +205,7 @@ export default function PlaylistDetail({ id }: { id: string }) {
       console.error("Error fetching available music:", err);
       alert("Failed to load available music");
     } finally {
-      setLoadingAvailableMusic(false);
+      setAddMusicLoading(false);
     }
   };
 
@@ -197,12 +221,12 @@ export default function PlaylistDetail({ id }: { id: string }) {
 
       // Send single request with all musicIds
       await axiosClient.post(
-        `${MOCK_API_URL}/api/v1/playlists/${playlist.id}/tracks`,
+        `${API_URL}/api/v1/playlists/${playlist.id}/tracks`,
         { musicIds }
       );
 
       // Refresh playlist data
-      const response = await axiosClient.get(`${MOCK_API_URL}/api/v1/playlists/${playlist.id}`);
+      const response = await axiosClient.get(`${API_URL}/api/v1/playlists/${playlist.id}`);
 
       const raw = response.data;
       const data: PlaylistResponse | undefined = raw?.data ?? raw;
@@ -218,7 +242,7 @@ export default function PlaylistDetail({ id }: { id: string }) {
             artist: m.artist ?? "Unknown Artist",
             durationSeconds: m.durationSeconds ?? 0,
             fileUrl: m.fileUrl ?? "",
-            coverUrl: (m as any).coverUrl ?? null,
+            coverUrl: (m as any).cover ?? null,
           };
         });
 
@@ -245,17 +269,19 @@ export default function PlaylistDetail({ id }: { id: string }) {
     (async () => {
       setLoading(true);
       setError(null);
+      setCoverImageError(false);
       try {
-        const resp = await axiosClient.get(`${MOCK_API_URL}/api/v1/playlists/${id}`);
+        const resp = await axiosClient.get(`${API_URL}/api/v1/playlists/${id}`);
 
         const raw = resp?.data;
+        // Handle both response formats: {data: {...}} and direct object
         const data: PlaylistResponse | undefined = raw?.data ?? raw;
 
-        if (!raw?.success && !data) {
+        if (!data) {
           throw new Error("Invalid playlist payload");
         }
 
-        if (!canceled && data) {
+        if (!canceled) {
           setPlaylist(data);
 
           const mapped: SongItem[] = (data.tracks ?? []).map((t) => {
@@ -266,7 +292,7 @@ export default function PlaylistDetail({ id }: { id: string }) {
               artist: m.artist ?? "Unknown Artist",
               durationSeconds: m.durationSeconds ?? 0,
               fileUrl: m.fileUrl ?? "",
-              coverUrl: (m as any).coverUrl ?? null,
+              coverUrl: (m as any).cover ?? null,
             };
           });
 
@@ -340,6 +366,7 @@ export default function PlaylistDetail({ id }: { id: string }) {
 
   return (
     <div className="w-full min-h-screen px-6 py-6">
+      {/* Tabs - Always visible */}
       <div className="flex items-center justify-start">
         <div className="flex items-center gap-4">
           <button
@@ -347,181 +374,245 @@ export default function PlaylistDetail({ id }: { id: string }) {
               router.push("/media");
               setActiveTab("media");
             }}
-            className={`pb-3 font-semibold border-b-2 transition-colors ${activeTab === "media" ? "text-orange-500 border-orange-400" : "text-gray-400 border-transparent"}`}
+            className={`pb-3 font-semibold border-b-2 transition-colors ${activeTab === "media"
+              ? "text-orange-500 border-orange-400"
+              : "text-gray-400 border-transparent"
+              }`}
           >
             Media
           </button>
           <button
             onClick={() => setActiveTab("playlist")}
-            className={`pb-3 font-semibold border-b-2 transition-colors ${activeTab === "playlist" ? "text-orange-500 border-orange-400" : "text-gray-400 border-transparent"}`}
+            className={`pb-3 font-semibold border-b-2 transition-colors ${activeTab === "playlist"
+              ? "text-orange-500 border-orange-400"
+              : "text-gray-400 border-transparent"
+              }`}
           >
-            Play list
+            Playlist
           </button>
         </div>
       </div>
 
-      <div className="mt-6 flex items-start gap-6">
-        <div className="w-56 h-56 rounded-2xl overflow-hidden shadow-md">
-          {playlist && (playlist as any).coverUrl ? (
-            <Image src={(playlist as any).coverUrl} width={224} height={224} alt="cover" className="object-cover w-full h-full" />
-          ) : (
-            <div
-              className="w-full h-full flex items-center justify-center text-white text-xl font-semibold"
-              style={{ background: pickColorForText(playlist?.name), minHeight: 224 }}
-            >
-              {initialsFrom(playlist?.name)}
-            </div>
-          )}
-        </div>
+      {/* Loading State */}
+      {loading && (
+        <div className="mt-8 px-6 py-8 text-sm text-gray-500">Loading playlist…</div>
+      )}
 
-        <div className="flex-1">
-          <div className="p-8 md:p-15 flex flex-col md:flex-row md:items-start md:justify-between">
-            <div>
-              <h1 className="text-4xl font-bold">{playlist?.name ?? "Playlist"}</h1>
-              <div className="text-sm text-gray-500 mt-2">
-                {playlist?.description ?? ""}
-                <span> Album </span>
-                <span> {playlist ? `| ${playlist.trackCount ?? songs.length} songs` : ""} </span>
-                <span> {playlist ? `| ${formatDuration(playlist.totalDurationSeconds)} mins` : ""}</span>
+      {/* Error State */}
+      {error && !loading && (
+        <div className="mt-8 px-6 py-8 text-sm text-red-600">Failed to load playlist: {error}</div>
+      )}
+
+      {/* Content - Only show when not loading */}
+      {!loading && !error && (
+        <>
+          <div className="mt-6 flex items-start gap-6">
+            <div className="w-56 h-56 rounded-2xl overflow-hidden shadow-md">
+              {playlist && playlist.coverUrl && !coverImageError ? (
+                <Image
+                  src={playlist.coverUrl}
+                  width={224}
+                  height={224}
+                  alt={playlist.name || "cover"}
+                  className="object-cover w-full h-full"
+                  onError={() => setCoverImageError(true)}
+                  priority
+                />
+              ) : (
+                <div
+                  className="w-full h-full flex items-center justify-center text-white text-xl font-semibold"
+                  style={{ background: pickColorForText(playlist?.name), minHeight: 224 }}
+                >
+                  {initialsFrom(playlist?.name)}
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1">
+              <div className="p-8 md:p-15 flex flex-col md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h1 className="text-4xl font-bold">{playlist?.name ?? "Playlist"}</h1>
+                  <div className="text-sm text-gray-500 mt-2">
+                    {playlist?.description ?? ""}
+                    <span> • Album </span>
+                    <span>{playlist ? `${playlist.trackCount ?? songs.length} songs` : ""}</span>
+                    <span> • {playlist ? `${formatDuration(playlist.totalDurationSeconds)} mins` : ""}</span>
+                  </div>
+                </div>
+
+                <div className="mt-4 md:mt-6 flex items-center gap-6">
+                  <button
+                    className="flex items-center gap-3 px-10 py-3 rounded-full text-white text-sm"
+                    style={{ background: "linear-gradient(180deg,#ff8a2b,#f97316)", boxShadow: "0 12px 30px rgba(249,115,22,0.18)", minWidth: 180 }}
+                  >
+                    <svg width="25" height="24" viewBox="0 0 25 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M18.9699 3.71967C19.2628 3.42678 19.7376 3.42678 20.0305 3.71967L22.2804 5.96957C22.5733 6.26246 22.5733 6.73733 22.2804 7.03023L20.0303 9.28033C19.7374 9.57322 19.2626 9.57322 18.9697 9.28033C18.6768 8.98744 18.6768 8.51256 18.9697 8.21967L19.9393 7.25L17.1865 7.25C16.9685 7.25 16.7614 7.34482 16.6189 7.50979L12.741 12L16.6189 16.4902C16.7614 16.6552 16.9685 16.75 17.1865 16.75H19.9395L18.9699 15.7803C18.677 15.4874 18.677 15.0126 18.9699 14.7197C19.2628 14.4268 19.7376 14.4268 20.0305 14.7197L22.2804 16.9696C22.5733 17.2625 22.5733 17.7373 22.2804 18.0302L20.0303 20.2803C19.7374 20.5732 19.2626 20.5732 18.9697 20.2803C18.6768 19.9874 18.6768 19.5126 18.9697 19.2197L19.9393 18.25H17.1865C16.5326 18.25 15.9111 17.9655 15.4837 17.4706L11.75 13.1475L8.01634 17.4706C7.58894 17.9655 6.96738 18.25 6.31349 18.25H3.25C2.83579 18.25 2.5 17.9142 2.5 17.5C2.5 17.0858 2.83579 16.75 3.25 16.75H6.31349C6.53145 16.75 6.73864 16.6552 6.8811 16.4902L10.759 12L6.8811 7.50979C6.73864 7.34482 6.53145 7.25 6.31349 7.25H3.25C2.83579 7.25 2.5 6.91421 2.5 6.5C2.5 6.08579 2.83579 5.75 3.25 5.75H6.31349C6.96738 5.75 7.58894 6.03447 8.01634 6.52936L11.75 10.8525L15.4837 6.52936C15.9111 6.03447 16.5326 5.75 17.1865 5.75L19.9395 5.75L18.9699 4.78033C18.677 4.48744 18.677 4.01256 18.9699 3.71967Z" fill="#fff" />
+                    </svg>
+                    <span className="font-medium">Shuffle</span>
+                  </button>
+
+                  <button className="flex items-center gap-3 px-8 py-3 rounded-full bg-amber-50 text-amber-700 border border-amber-100 text-sm hover:bg-amber-100 transition-colors">
+                    <span className="w-8 h-8 flex items-center justify-center rounded-full bg-white shadow-sm">
+                      <span className="w-4 h-4 flex items-center justify-center rounded-full bg-amber-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 text-white ml-0.5" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M6.5 5.5v9l7-4.5-7-4.5z" />
+                        </svg>
+                      </span>
+                    </span>
+                    <span className="font-medium">Play</span>
+                  </button>
+                </div>
               </div>
             </div>
+          </div>
 
-            <div className="mt-4 md:mt-6 flex items-center gap-6">
-              <button
-                className="flex items-center gap-3 px-10 py-3 rounded-full text-white text-sm"
-                style={{ background: "linear-gradient(180deg,#ff8a2b,#f97316)", boxShadow: "0 12px 30px rgba(249,115,22,0.18)", minWidth: 180 }}
-              >
-                <svg width="25" height="24" viewBox="0 0 25 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M18.9699 3.71967C19.2628 3.42678 19.7376 3.42678 20.0305 3.71967L22.2804 5.96957C22.5733 6.26246 22.5733 6.73733 22.2804 7.03023L20.0303 9.28033C19.7374 9.57322 19.2626 9.57322 18.9697 9.28033C18.6768 8.98744 18.6768 8.51256 18.9697 8.21967L19.9393 7.25L17.1865 7.25C16.9685 7.25 16.7614 7.34482 16.6189 7.50979L12.741 12L16.6189 16.4902C16.7614 16.6552 16.9685 16.75 17.1865 16.75H19.9395L18.9699 15.7803C18.677 15.4874 18.677 15.0126 18.9699 14.7197C19.2628 14.4268 19.7376 14.4268 20.0305 14.7197L22.2804 16.9696C22.5733 17.2625 22.5733 17.7373 22.2804 18.0302L20.0303 20.2803C19.7374 20.5732 19.2626 20.5732 18.9697 20.2803C18.6768 19.9874 18.6768 19.5126 18.9697 19.2197L19.9393 18.25H17.1865C16.5326 18.25 15.9111 17.9655 15.4837 17.4706L11.75 13.1475L8.01634 17.4706C7.58894 17.9655 6.96738 18.25 6.31349 18.25H3.25C2.83579 18.25 2.5 17.9142 2.5 17.5C2.5 17.0858 2.83579 16.75 3.25 16.75H6.31349C6.53145 16.75 6.73864 16.6552 6.8811 16.4902L10.759 12L6.8811 7.50979C6.73864 7.34482 6.53145 7.25 6.31349 7.25H3.25C2.83579 7.25 2.5 6.91421 2.5 6.5C2.5 6.08579 2.83579 5.75 3.25 5.75H6.31349C6.96738 5.75 7.58894 6.03447 8.01634 6.52936L11.75 10.8525L15.4837 6.52936C15.9111 6.03447 16.5326 5.75 17.1865 5.75L19.9395 5.75L18.9699 4.78033C18.677 4.48744 18.677 4.01256 18.9699 3.71967Z" fill="#fff" />
+          {/* header row: count left, search+controls right */}
+          <div className="mt-6 flex items-center justify-between">
+            <div className="text-gray-800 font-semibold">{filteredSongs.length} songs</div>
+
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <circle cx="11" cy="11" r="6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
+                <input
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="h-11 w-[420px] rounded-lg border border-gray-200 bg-white py-2.5 pl-11 pr-4 text-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400"
+                  placeholder="Search..."
+                />
+              </div>
 
-                <span className="font-medium">Shuffle</span>
+              <button className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 hover:text-gray-800">
+                <svg className="stroke-current fill-white" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2.29004 5.90393H17.7067" stroke="" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M17.7075 14.0961H2.29085" stroke="" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M12.0826 3.33331C13.5024 3.33331 14.6534 4.48431 14.6534 5.90414C14.6534 7.32398 13.5024 8.47498 12.0826 8.47498C10.6627 8.47498 9.51172 7.32398 9.51172 5.90415C9.51172 4.48432 10.6627 3.33331 12.0826 3.33331Z" fill="" stroke="" strokeWidth="1.5" />
+                  <path d="M7.91745 11.525C6.49762 11.525 5.34662 12.676 5.34662 14.0959C5.34661 15.5157 6.49762 16.6667 7.91745 16.6667C9.33728 16.6667 10.4883 15.5157 10.4883 14.0959C10.4883 12.676 9.33728 11.525 7.91745 11.525Z" fill="" stroke="" strokeWidth="1.5" />
+                </svg>
+                Filter
               </button>
 
-              <button className="flex items-center gap-3 px-8 py-3 rounded-full bg-amber-50 text-amber-700 border border-amber-100 text-sm">
-                <span className="w-8 h-8 flex items-center justify-center rounded-full bg-white shadow-sm">
-                  <span className="w-4 h-4 flex items-center justify-center rounded-full bg-amber-500">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 text-white ml-0.5" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M6.5 5.5v9l7-4.5-7-4.5z" />
-                    </svg>
-                  </span>
-                </span>
-                <span className="font-medium">Play</span>
+              <button
+                onClick={() => {
+                  setIsAddMusicOpen(true);
+                  fetchAvailableMusic();
+                }}
+                className="inline-flex items-center gap-2 rounded-lg border border-brand-300 bg-brand-50 px-4 py-2.5 text-sm font-medium text-brand-600 hover:bg-brand-100 transition-all"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                </svg>
+                Add Music
+              </button>
+
+              <button
+                onClick={handleDeleteSelected}
+                disabled={selected.size === 0 || deletingIds.size > 0}
+                className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${selected.size === 0 || deletingIds.size > 0
+                  ? 'border-gray-200 text-gray-300 bg-gray-50 cursor-not-allowed'
+                  : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100 hover:border-red-400'
+                  }`}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className={`w-4 h-4 ${selected.size === 0 ? 'text-gray-300' : 'text-red-600'}`}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                >
+                  <path d="M3 6h18" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M10 11v6" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M14 11v6" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                {deletingIds.size > 0 ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* header row: count left, search+controls right */}
-      <div className="mt-6 flex items-center justify-between">
-        <div className="text-gray-800 font-semibold">{filteredSongs.length} songs</div>
+          <div className="mt-6 rounded-xl border border-gray-200 bg-white">
+            <div className="divide-y divide-gray-100">
+              {paginated.map((s) => (
+                <div key={s.id} className="flex items-center justify-between px-6 py-4">
+                  <div className="flex items-center gap-4">
+                    <Checkbox
+                      checked={selected.has(s.id)}
+                      onChange={() => toggle(s.id)}
+                    />
+                    <div className="w-12 h-12 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0">
+                      {s.coverUrl ? (
+                        <Image
+                          src={s.coverUrl}
+                          width={48}
+                          height={48}
+                          alt={s.title}
+                          className="object-cover w-full h-full"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-white font-semibold text-sm" style={{ background: pickColorForText(s.title) }}>
+                          {initialsFrom(s.title)}
+                        </div>
+                      )}
+                    </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" width="18" height="18" viewBox="0 0 24 24" fill="none">
-              <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              <circle cx="11" cy="11" r="6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <input value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} className="h-11 w-[420px] rounded-lg border border-gray-200 bg-white py-2.5 pl-11 pr-4 text-sm text-gray-600" placeholder="Search..." />
-          </div>
-
-          <button className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 hover:text-gray-800">
-            <svg className="stroke-current fill-white" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M2.29004 5.90393H17.7067" stroke="" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M17.7075 14.0961H2.29085" stroke="" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M12.0826 3.33331C13.5024 3.33331 14.6534 4.48431 14.6534 5.90414C14.6534 7.32398 13.5024 8.47498 12.0826 8.47498C10.6627 8.47498 9.51172 7.32398 9.51172 5.90415C9.51172 4.48432 10.6627 3.33331 12.0826 3.33331Z" fill="" stroke="" strokeWidth="1.5" />
-              <path d="M7.91745 11.525C6.49762 11.525 5.34662 12.676 5.34662 14.0959C5.34661 15.5157 6.49762 16.6667 7.91745 16.6667C9.33728 16.6667 10.4883 15.5157 10.4883 14.0959C10.4883 12.676 9.33728 11.525 7.91745 11.525Z" fill="" stroke="" strokeWidth="1.5" />
-            </svg>
-            Filter
-          </button>
-
-          <button
-            onClick={() => {
-              setIsAddMusicOpen(true);
-              fetchAvailableMusic();
-            }}
-            className="inline-flex items-center gap-2 rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2.5 text-theme-sm font-medium text-indigo-600 hover:bg-indigo-100 transition-all"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-            </svg>
-            Add Music
-          </button>
-
-          <button onClick={handleDeleteSelected} disabled={selected.size === 0} className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-theme-sm font-medium ${selected.size === 0 ? 'border-gray-200 text-gray-300 bg-gray-50 cursor-not-allowed' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:text-gray-800'}`}>
-            <svg xmlns="http://www.w3.org/2000/svg" className={`w-4 h-4 ${selected.size === 0 ? 'text-gray-300' : 'text-gray-500'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path d="M3 6h18" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M10 11v6" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M14 11v6" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            Delete
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-6 rounded-xl border border-gray-200 bg-white">
-        {loading && <div className="px-6 py-8 text-sm text-gray-500">Loading playlist…</div>}
-        {error && !loading && <div className="px-6 py-8 text-sm text-red-600">Failed to load playlist: {error}</div>}
-
-        {!loading && !error && (
-          <div className="divide-y divide-gray-100">
-            {paginated.map((s) => (
-              <div key={s.id} className="flex items-center justify-between px-6 py-4">
-                <div className="flex items-center gap-4">
-                  <Checkbox checked={selected.has(s.id)} onChange={() => toggle(s.id)} />
-                  <div className="w-12 h-12 rounded-lg overflow-hidden flex items-center justify-center">
-                    {s.coverUrl ? (
-                      <Image src={s.coverUrl} width={48} height={48} alt={s.title} className="object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-white font-semibold text-sm" style={{ background: pickColorForText(s.title) }}>
-                        {initialsFrom(s.title)}
-                      </div>
-                    )}
+                    <div>
+                      <div className="font-semibold text-gray-800 text-sm">{s.title}</div>
+                      <div className="text-gray-500 text-xs mt-1">{s.artist}</div>
+                    </div>
                   </div>
 
-                  <div>
-                    <div className="font-semibold text-gray-800 text-sm">{s.title}</div>
-                    <div className="text-gray-500 text-xs mt-1">{s.artist}</div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-gray-500 text-sm">{formatDuration(s.durationSeconds)}</div>
+
+                    <audio id={`audio-${s.id}`} src={s.fileUrl} onEnded={() => { setIsPlaying(false); setCurrentPlayingId(null); }} />
+
+                    <button
+                      aria-label="play"
+                      onClick={() => handlePlayPause(s)}
+                      className="w-9 h-9 flex items-center justify-center rounded-full bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+                    >
+                      {isPlaying && currentPlayingId === s.id ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M6 4h3v12H6zM11 4h3v12h-3z" />
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M6.5 5.5v9l7-4.5-7-4.5z" />
+                        </svg>
+                      )}
+                    </button>
+
+                    <button className="p-2 text-gray-400 hover:text-gray-600 transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zm6 0a2 2 0 11-4 0 2 2 0 014 0zm6 0a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
+              ))}
 
-                <div className="flex items-center gap-4">
-                  <div className="text-gray-500 text-sm">{formatDuration(s.durationSeconds)}</div>
-
-                  <audio id={`audio-${s.id}`} src={s.fileUrl} onEnded={() => { setIsPlaying(false); setCurrentPlayingId(null); }} />
-
-                  <button aria-label="play" onClick={() => handlePlayPause(s)} className="w-9 h-9 flex items-center justify-center rounded-full bg-orange-500 text-white">
-                    {isPlaying && currentPlayingId === s.id ? (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M6 4h3v12H6zM11 4h3v12h-3z" />
-                      </svg>
-                    ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M6.5 5.5v9l7-4.5-7-4.5z" />
-                      </svg>
-                    )}
-                  </button>
-
-                  <button className="p-2 text-gray-400 hover:text-gray-600">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zm6 0a2 2 0 11-4 0 2 2 0 014 0zm6 0a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            {paginated.length === 0 && <div className="px-6 py-8 text-sm text-gray-500">No songs found.</div>}
+              {paginated.length === 0 && <div className="px-6 py-8 text-sm text-gray-500">No songs found.</div>}
+            </div>
           </div>
-        )}
-      </div>
 
-      <div className="mt-4 flex items-center justify-center">
-        <PaginationWithTextWitIcon totalPages={totalPages} initialPage={currentPage} onPageChange={(p) => setCurrentPage(p)} />
-      </div>
+          <div className="mt-4 flex items-center justify-center">
+            <PaginationWithTextWitIcon
+              totalPages={totalPages}
+              initialPage={currentPage}
+              onPageChange={(p) => setCurrentPage(p)}
+            />
+          </div>
+        </>
+      )}
 
       {/* Add Music Modal */}
       <Modal isOpen={isAddMusicOpen} onClose={() => setIsAddMusicOpen(false)} className="!m-0 !p-0">
@@ -543,16 +634,18 @@ export default function PlaylistDetail({ id }: { id: string }) {
                   onChange={(e) => setAddMusicSearch(e.target.value)}
                   type="text"
                   placeholder="Search songs..."
-                  className="h-11 w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-11 pr-4 text-sm text-gray-600"
+                  className="h-11 w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-11 pr-4 text-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-brand-100 focus:border-brand-400"
                 />
               </div>
 
               {/* Loading state */}
-              {loadingAvailableMusic && <div className="py-4 text-sm text-gray-500">Loading available songs...</div>}
+              {addMusicLoading && (
+                <div className="px-6 py-8 text-sm text-gray-500">Loading music…</div>
+              )}
 
               {/* Song list */}
-              {!loadingAvailableMusic && (
-                <div className="space-y-2 max-h-96 overflow-y-auto">
+              {!addMusicLoading && (
+                <div className="space-y-2 overflow-y-auto h-4/5">
                   {filteredAvailableMusic.length > 0 ? (
                     filteredAvailableMusic.map((music) => {
                       const isAlreadyInPlaylist = music.isInPlaylist;
@@ -564,7 +657,7 @@ export default function PlaylistDetail({ id }: { id: string }) {
                           className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-all ${isAlreadyInPlaylist
                             ? "border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed"
                             : "border-gray-200 hover:bg-gray-50"
-                            } ${isSelected ? "bg-indigo-50 border-indigo-300" : ""}`}
+                            } ${isSelected ? "bg-brand-50 border-brand-300" : ""}`}
                         >
                           <Checkbox
                             checked={isSelected}
@@ -573,7 +666,16 @@ export default function PlaylistDetail({ id }: { id: string }) {
                           />
                           <div className="w-10 h-10 rounded overflow-hidden flex-shrink-0">
                             {music.cover ? (
-                              <Image src={music.cover} width={40} height={40} alt={music.title} className="object-cover w-full h-full" />
+                              <Image
+                                src={music.cover}
+                                width={40}
+                                height={40}
+                                alt={music.title}
+                                className="object-cover w-full h-full"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display = 'none';
+                                }}
+                              />
                             ) : (
                               <div
                                 className="w-full h-full flex items-center justify-center text-white text-xs font-semibold"
@@ -620,9 +722,9 @@ export default function PlaylistDetail({ id }: { id: string }) {
               <button
                 onClick={handleAddMusicToPlaylist}
                 disabled={selectedMusicToAdd.size === 0 || addingMusic}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-2 bg-brand-600 text-white rounded-md hover:bg-brand-700 disabled:bg-brand-400 disabled:cursor-not-allowed transition-colors"
               >
-                {addingMusic ? "Adding..." : `Add ${selectedMusicToAdd.size} Song${selectedMusicToAdd.size !== 1 ? "s" : ""}`}
+                {addingMusic ? `Adding...` : `Add ${selectedMusicToAdd.size} Song${selectedMusicToAdd.size !== 1 ? "s" : ""}`}
               </button>
             </div>
           </aside>

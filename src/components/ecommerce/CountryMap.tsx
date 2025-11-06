@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import axiosClient from "@/utils/axiosClient";
 import dynamic from "next/dynamic";
 import { worldMill } from "@react-jvectormap/world";
-import { MOCK_API_URL } from "@/utils/constants";
+import { API_URL } from "@/utils/constants";
 
 const VectorMap = dynamic(
   () => import("@react-jvectormap/core").then((mod) => mod.VectorMap),
@@ -41,7 +41,7 @@ const CountryMap: React.FC<CountryMapProps> = ({ mapColor }) => {
     const fetchLocations = async () => {
       try {
         const res = await axiosClient.get<{ data: DeviceLocation[] }>(
-          `${MOCK_API_URL}/api/v1/devices/location`,
+          `${API_URL}/api/v1/devices/location`,
           { withCredentials: true }
         );
 
