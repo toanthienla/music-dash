@@ -3,78 +3,41 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import axiosClient from "@/utils/axiosClient";
-import { TEKNIX_USER_SESSION_TOKEN, API_URL } from "@/utils/constants";
+import { API_URL } from "@/utils/constants";
 import CountryMap from "./CountryMap";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableRow,
-} from "../ui/table";
 import PaginationWithTextWitIcon from "../ui/pagination/PaginationWithTextWitIcon";
 
 // ===== Type Definitions =====
 interface Device {
   id: string;
-  deviceId: string;
   name: string;
   type: string;
-  model: string;
   macAddress: string;
-  address: string;
   status: string;
   volume: number;
   muted: boolean;
-  firmwareVersion: string;
   lastHeartbeat: string;
-  joinedAt: string;
+  createdAt: string;
   enabled: boolean;
 }
 
-interface Category {
-  id: number;
-  name: string;
+interface Group {
+  id: string;
+  group_name: string;
+  description?: string;
+  device_count?: number;
 }
 
 interface ApiDeviceData {
-  device_id: string;
-  device: {
-    id: string;
-    mac_address: string;
-    thingsboard_device_id: string;
-    user_id: string;
-    name: string;
-    type: string;
-    model: string;
-    firmware_version: string;
-    status: string;
-    last_heartbeat: string;
-    last_ip_address: string;
-    capabilities: {
-      opus_decoder: boolean;
-      sample_rates: number[];
-      max_channels: number;
-      buffer_size: number;
-      has_eq: boolean;
-      has_volume: boolean;
-      hardware_volume: boolean;
-    };
-    current_session_id: string;
-    current_position_ms: number;
-    buffer_health: number;
-    volume: number;
-    muted: boolean;
-    total_streams: number;
-    total_bytes_received: number;
-    created_at: string;
-    updated_at: string;
-  };
-  joined_at: string;
-  is_online: boolean;
-  device_position_ms: number;
-  device_buffer_health: number;
-  latency_ms: number;
+  id: string;
+  mac_address: string;
+  name: string;
+  type: string;
+  status: string;
+  volume: number;
+  muted: boolean;
+  last_heartbeat?: string;
+  created_at: string;
 }
 
 interface ApiResponse<T> {
@@ -109,26 +72,20 @@ const formatDateTime = (dateString: string): string => {
  * Map API response to Device type
  */
 const mapApiDevicesToTableDevices = (apiDevices: ApiDeviceData[]): Device[] => {
-  return apiDevices.map((item: ApiDeviceData) => {
-    const deviceData = item.device;
-
+  return apiDevices.map((deviceData: ApiDeviceData) => {
     return {
       id: deviceData.id,
-      deviceId: item.device_id,
       name: deviceData.name || "Unknown Device",
       type: deviceData.type || "N/A",
-      model: deviceData.model || "N/A",
       macAddress: deviceData.mac_address || "N/A",
-      address: deviceData.last_ip_address || "N/A",
       status: deviceData.status || "unknown",
       volume: typeof deviceData.volume === "number"
         ? Math.min(100, Math.max(0, deviceData.volume))
         : 0,
       muted: Boolean(deviceData.muted),
-      enabled: item.is_online && deviceData.status === "online",
-      firmwareVersion: deviceData.firmware_version || "N/A",
+      enabled: deviceData.status === "online",
       lastHeartbeat: deviceData.last_heartbeat || "N/A",
-      joinedAt: item.joined_at || "N/A",
+      createdAt: deviceData.created_at || "N/A",
     };
   });
 };
@@ -136,26 +93,79 @@ const mapApiDevicesToTableDevices = (apiDevices: ApiDeviceData[]): Device[] => {
 // ===== Main Component =====
 export default function DemographicCard() {
   const [devices, setDevices] = useState<Device[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [loadingGroups, setLoadingGroups] = useState(true);
+  const [loadingDevices, setLoadingDevices] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [selectedGroup, setSelectedGroup] = useState<string>("");
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
 
   const devicesPerPage = 5;
 
-  // ===== Fetch Devices from Session Endpoint =====
+  // ===== Fetch Groups =====
   useEffect(() => {
-    const fetchDevices = async () => {
-      setLoading(true);
+    const fetchGroups = async () => {
+      setLoadingGroups(true);
       setError(null);
       try {
-        if (!TEKNIX_USER_SESSION_TOKEN) {
-          throw new Error("Session token not found. Please log in again.");
+        const endpoint = `${API_URL}/api/v1/groups/list`;
+
+        console.log(`[DemographicCard] Fetching groups from: ${endpoint}`);
+
+        const res = await axiosClient.get<ApiResponse<Group[]>>(endpoint);
+
+        console.log("[DemographicCard] Groups API Response:", res.data);
+
+        if (!res.data.success) {
+          throw new Error(res.data.message || "Failed to fetch groups");
         }
 
-        const endpoint = `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/devices`;
+        const groupsList = res.data?.data || [];
+
+        if (!Array.isArray(groupsList) || groupsList.length === 0) {
+          console.warn("[DemographicCard] No groups found");
+          setGroups([]);
+          setLoadingGroups(false);
+          return;
+        }
+
+        console.log(`[DemographicCard] Fetched ${groupsList.length} groups`, groupsList);
+        setGroups(groupsList);
+
+        // Auto-select first group if available
+        if (groupsList.length > 0) {
+          setSelectedGroup(groupsList[0].id);
+        }
+      } catch (err: any) {
+        const errorMessage =
+          err?.response?.data?.message ||
+          err?.message ||
+          "Failed to fetch groups";
+
+        console.error("[DemographicCard] Error fetching groups:", errorMessage, err);
+        setGroups([]);
+        setError(errorMessage);
+      } finally {
+        setLoadingGroups(false);
+      }
+    };
+
+    fetchGroups();
+  }, []);
+
+  // ===== Fetch Devices from Selected Group =====
+  useEffect(() => {
+    if (!selectedGroup) {
+      setDevices([]);
+      return;
+    }
+
+    const fetchDevices = async () => {
+      setLoadingDevices(true);
+      setError(null);
+      try {
+        const endpoint = `${API_URL}/api/v1/groups/${selectedGroup}/devices`;
 
         console.log(`[DemographicCard] Fetching devices from: ${endpoint}`);
 
@@ -163,7 +173,7 @@ export default function DemographicCard() {
           endpoint
         );
 
-        console.log("[DemographicCard] API Response:", res.data);
+        console.log("[DemographicCard] Devices API Response:", res.data);
 
         if (!res.data.success) {
           throw new Error(res.data.message || "Failed to fetch devices");
@@ -181,16 +191,7 @@ export default function DemographicCard() {
 
         const mappedDevices = mapApiDevicesToTableDevices(rawDevices);
         setDevices(mappedDevices);
-
-        // Extract unique categories from devices
-        const uniqueCategories = Array.from(
-          new Set(mappedDevices.map((d) => d.type))
-        ).map((type, index) => ({
-          id: index,
-          name: type,
-        }));
-
-        setCategories(uniqueCategories);
+        setCurrentPage(1);
       } catch (err: any) {
         const errorMessage =
           err?.response?.data?.message ||
@@ -200,33 +201,22 @@ export default function DemographicCard() {
         console.error("[DemographicCard] Error:", errorMessage);
         setError(errorMessage);
         setDevices([]);
-        setCategories([]);
       } finally {
-        setLoading(false);
+        setLoadingDevices(false);
       }
     };
 
     fetchDevices();
-  }, []);
+  }, [selectedGroup]);
 
   // ===== Filter Devices =====
-  const filteredByCategory =
-    selectedCategory === "All"
-      ? devices
-      : devices.filter(
-        (device) =>
-          device.type.toLowerCase() === selectedCategory.toLowerCase()
-      );
-
-  const filteredDevices = filteredByCategory.filter((device) => {
+  const filteredDevices = devices.filter((device) => {
     if (!searchTerm) return true;
     const q = searchTerm.toLowerCase();
     return (
       device.name.toLowerCase().includes(q) ||
-      device.address.toLowerCase().includes(q) ||
       device.macAddress.toLowerCase().includes(q) ||
       device.type.toLowerCase().includes(q) ||
-      device.model.toLowerCase().includes(q) ||
       device.status.toLowerCase().includes(q)
     );
   });
@@ -246,17 +236,35 @@ export default function DemographicCard() {
   };
 
   // ===== Render =====
-  if (loading) {
+  if (loadingGroups) {
     return (
       <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
         <div className="flex items-center justify-center h-64">
-          <p className="text-gray-500 dark:text-gray-400">Loading devices...</p>
+          <p className="text-gray-500 dark:text-gray-400">Loading groups...</p>
         </div>
       </div>
     );
   }
 
-  if (error) {
+  if (groups.length === 0) {
+    return (
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <p className="text-gray-500 dark:text-gray-400 mb-4">No groups available</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !selectedGroup) {
     return (
       <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
         <div className="flex items-center justify-center h-64">
@@ -282,33 +290,22 @@ export default function DemographicCard() {
           Group device
         </h3>
         <div className="flex gap-2">
-          {/* Category Dropdown */}
+          {/* Group Dropdown */}
           <select
-            value={selectedCategory}
+            value={selectedGroup}
             onChange={(e) => {
-              setSelectedCategory(e.target.value);
+              setSelectedGroup(e.target.value);
               setCurrentPage(1);
             }}
             className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03] dark:hover:text-gray-200 transition-colors"
           >
-            <option value="All">Select group devices</option>
-            {categories.map((cat) => (
-              <option key={cat.id} value={cat.name}>
-                {cat.name}
+            <option value="">Select a group</option>
+            {groups.map((group) => (
+              <option key={group.id} value={group.id}>
+                {group.group_name}
               </option>
             ))}
           </select>
-
-          <button
-            onClick={() => {
-              setSelectedCategory("All");
-              setCurrentPage(1);
-              setSearchTerm("");
-            }}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03] dark:hover:text-gray-200 transition-colors"
-          >
-            See all
-          </button>
         </div>
       </div>
 
@@ -342,7 +339,7 @@ export default function DemographicCard() {
           </svg>
           <input
             type="text"
-            placeholder="Search by name, IP, MAC, type, model..."
+            placeholder="Search by name, MAC, type, status..."
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
@@ -353,162 +350,157 @@ export default function DemographicCard() {
         </div>
       </div>
 
+      {/* ===== Loading State ===== */}
+      {loadingDevices && (
+        <div className="flex items-center justify-center py-8">
+          <p className="text-gray-500 dark:text-gray-400">Loading devices...</p>
+        </div>
+      )}
+
       {/* ===== Table ===== */}
-      <div className="max-w-full overflow-x-hidden">
-        <Table>
-          <TableHeader className="border-gray-100 dark:border-gray-800 border-y">
-            <TableRow>
-              <TableCell
-                isHeader
-                className="py-3 font-medium text-gray-500 dark:text-gray-400 text-start text-xs"
-              >
-                Device Name
-              </TableCell>
-              <TableCell
-                isHeader
-                className="py-3 font-medium text-gray-500 dark:text-gray-400 text-start text-xs"
-              >
-                Type
-              </TableCell>
-              <TableCell
-                isHeader
-                className="py-3 font-medium text-gray-500 dark:text-gray-400 text-start text-xs"
-              >
-                Model
-              </TableCell>
-              <TableCell
-                isHeader
-                className="py-3 font-medium text-gray-500 dark:text-gray-400 text-start text-xs"
-              >
-                MAC Address
-              </TableCell>
-              <TableCell
-                isHeader
-                className="py-3 font-medium text-gray-500 dark:text-gray-400 text-start text-xs"
-              >
-                IP Address
-              </TableCell>
-              <TableCell
-                isHeader
-                className="py-3 font-medium text-gray-500 dark:text-gray-400 text-start text-xs"
-              >
-                Volume
-              </TableCell>
-              <TableCell
-                isHeader
-                className="py-3 font-medium text-gray-500 dark:text-gray-400 text-start text-xs"
-              >
-                Status
-              </TableCell>
-            </TableRow>
-          </TableHeader>
-
-          <TableBody>
-            {paginatedDevices.length === 0 ? (
+      {!loadingDevices && (
+        <div className="max-w-full overflow-x-auto">
+          <table className="min-w-full">
+            <thead>
               <tr>
-                <td
-                  colSpan={7}
-                  className="py-8 px-3 text-center text-gray-500 dark:text-gray-400"
-                >
-                  No devices found
-                </td>
+                <th className="px-4 py-3 border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                  <div className="flex items-center justify-between cursor-pointer">
+                    <p className="font-medium text-gray-700 text-sm dark:text-gray-300">
+                      Device Name
+                    </p>
+                  </div>
+                </th>
+                <th className="px-4 py-3 border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                  <div className="flex items-center justify-between cursor-pointer">
+                    <p className="font-medium text-gray-700 text-sm dark:text-gray-300">
+                      Type
+                    </p>
+                  </div>
+                </th>
+                <th className="px-4 py-3 border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                  <div className="flex items-center justify-between cursor-pointer">
+                    <p className="font-medium text-gray-700 text-sm dark:text-gray-300">
+                      MAC Address
+                    </p>
+                  </div>
+                </th>
+                <th className="px-4 py-3 border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                  <div className="flex items-center justify-between cursor-pointer">
+                    <p className="font-medium text-gray-700 text-sm dark:text-gray-300">
+                      Volume
+                    </p>
+                  </div>
+                </th>
+                <th className="px-4 py-3 border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                  <div className="flex items-center justify-between cursor-pointer">
+                    <p className="font-medium text-gray-700 text-sm dark:text-gray-300">
+                      Muted
+                    </p>
+                  </div>
+                </th>
+                <th className="px-4 py-3 border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                  <div className="flex items-center justify-between cursor-pointer">
+                    <p className="font-medium text-gray-700 text-sm dark:text-gray-300">
+                      Status
+                    </p>
+                  </div>
+                </th>
               </tr>
-            ) : (
-              paginatedDevices.map((device) => (
-                <TableRow key={device.id}>
-                  <TableCell className="py-4">
-                    <div className="flex items-center gap-3">
-                      <div>
-                        <p className="font-medium text-gray-800 dark:text-white text-sm">
-                          {device.name}
-                        </p>
-                      </div>
-                    </div>
-                  </TableCell>
-
-                  <TableCell className="py-4">
-                    <span className="text-sm text-gray-800 dark:text-white">
-                      {device.type}
-                    </span>
-                  </TableCell>
-
-                  <TableCell className="py-4">
-                    <span className="text-sm text-gray-800 dark:text-white">
-                      {device.model}
-                    </span>
-                  </TableCell>
-
-                  <TableCell className="py-4">
-                    <span className="font-mono text-xs text-gray-600 dark:text-gray-400">
-                      {device.macAddress}
-                    </span>
-                  </TableCell>
-
-                  <TableCell className="py-4">
-                    <span className="font-mono text-sm text-gray-600 dark:text-gray-400">
-                      {device.address}
-                    </span>
-                  </TableCell>
-
-                  <TableCell className="py-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-16 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-blue-500 rounded-full transition-all"
-                          style={{ width: `${device.volume}%` }}
-                        />
-                      </div>
-                      <span className="text-gray-500 dark:text-gray-400 text-xs whitespace-nowrap">
-                        {device.volume}%
+            </thead>
+            <tbody>
+              {paginatedDevices.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-8 border border-gray-100 dark:border-white/[0.05] text-center text-gray-500 dark:text-gray-400"
+                  >
+                    No devices found
+                  </td>
+                </tr>
+              ) : (
+                paginatedDevices.map((device) => (
+                  <tr key={device.id}>
+                    <td className="px-4 py-4 border border-gray-100 dark:border-white/[0.05]">
+                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                        {device.name}
                       </span>
-                    </div>
-                  </TableCell>
+                    </td>
 
-                  <TableCell className="py-4">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium gap-1 ${device.enabled && device.status === "online"
-                        ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                        : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-                        }`}
-                    >
-                      <span
-                        className="flex h-2 w-2 rounded-full"
-                        style={{
-                          backgroundColor:
-                            device.enabled && device.status === "online"
-                              ? "#22c55e"
-                              : "#ef4444",
-                        }}
-                      />
-                      {device.enabled && device.status === "online"
-                        ? "Online"
-                        : "Offline"}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+                    <td className="px-4 py-4 border border-gray-100 dark:border-white/[0.05]">
+                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                        {device.type}
+                      </span>
+                    </td>
 
-        {/* ===== Pagination ===== */}
-        {filteredDevices.length > 0 && (
-          <div className="flex items-center justify-between border-t border-gray-100 dark:border-gray-800 pt-4">
-            <div className="text-sm text-gray-600 dark:text-gray-400">
-              Showing {startIndex + 1} to{" "}
-              {Math.min(startIndex + devicesPerPage, filteredDevices.length)} of{" "}
-              {filteredDevices.length} devices
-            </div>
-            <div className="flex justify-center">
-              <PaginationWithTextWitIcon
-                totalPages={totalPages}
-                initialPage={currentPage}
-                onPageChange={handlePageChange}
-              />
-            </div>
+                    <td className="px-4 py-4 border border-gray-100 dark:border-white/[0.05]">
+                      <span className="font-mono text-xs text-gray-700 dark:text-gray-300">
+                        {device.macAddress}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-4 border border-gray-100 dark:border-white/[0.05]">
+                      <div className="flex items-center gap-2">
+                        <div className="w-16 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                          <div
+                            className="h-2 bg-brand-500 rounded-full transition-all"
+                            style={{ width: `${device.volume}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-brand-600 dark:text-brand-400 font-semibold whitespace-nowrap">
+                          {device.volume}%
+                        </span>
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-4 border border-gray-100 dark:border-white/[0.05]">
+                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                        {device.muted ? "true" : "false"}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-4 border border-gray-100 dark:border-white/[0.05]">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="flex h-2 w-2 rounded-full"
+                          style={{
+                            backgroundColor:
+                              device.enabled && device.status === "online"
+                                ? "#3641f5"
+                                : "#d1d5db",
+                          }}
+                        />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                          {device.enabled && device.status === "online"
+                            ? "Online"
+                            : "Offline"}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ===== Pagination ===== */}
+      {!loadingDevices && filteredDevices.length > 0 && (
+        <div className="flex items-center justify-between border-t border-gray-100 dark:border-gray-800 pt-4 mt-4">
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            Showing {startIndex + 1} to{" "}
+            {Math.min(startIndex + devicesPerPage, filteredDevices.length)} of{" "}
+            {filteredDevices.length} devices
           </div>
-        )}
-      </div>
+          <div className="flex justify-center">
+            <PaginationWithTextWitIcon
+              totalPages={totalPages}
+              initialPage={currentPage}
+              onPageChange={handlePageChange}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

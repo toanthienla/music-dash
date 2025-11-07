@@ -1,44 +1,82 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import {
-  Play,
-  Pause,
-  SkipBack,
-  SkipForward,
-  MoreVertical,
-  ArrowUp,
-  RotateCcw,
-  RotateCw,
-  Gauge,
-  Timer,
-  Cast,
-  Plus,
-  X,
-  Search,
-  Trash2,
-} from "lucide-react";
 import axiosClient from "@/utils/axiosClient";
-import { TEKNIX_USER_SESSION_TOKEN, IOT_BASE_URL, API_URL } from "@/utils/constants";
+import { IOT_BASE_URL, API_URL } from "@/utils/constants";
+import GroupSelector from "./GroupSelector";
+import PlayerControls from "./PlayerControls";
+import AddToQueuePanel from "./AddToQueuePanel";
+import QueueList from "./QueueList";
 
-interface QueueSong {
+interface Group {
+  id: string;
+  user_id: string;
+  group_name: string;
+  description: string;
+  cover_art_key: string;
+  cover_art_url: string;
+  current_track_id: string;
+  position_ms: number;
+  playback_status: "playing" | "paused" | "stopped";
+  volume_level: number;
+  repeat_mode: "none" | "track" | "context";
+  shuffle: boolean;
+  is_active: boolean;
+  device_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface QueueTrack {
   id: string;
   title: string;
   artist?: string;
-  durationSeconds: number;
-  album?: string;
-  genre?: string;
-  fileFormat: string;
-  bitrateKbps: number;
-  uploadedBy: string;
-  visibility: string;
-  isPublic: boolean;
-  createdAt: string;
-  updatedAt: string;
-  deletedAt: string | null;
-  storageKey: string;
-  fileSize: number;
-  contentType: string;
+  duration_ms: number;
+  thumbnail_key?: string;
+  thumbnail_url?: string;
+}
+
+interface QueueContext {
+  id: string;
+  type: "track" | "playlist" | "album";
+  queue_position: number;
+  current_track_index: number;
+  track_count: number;
+  total_duration_ms: number;
+  shuffle_enabled: boolean;
+  added_at: string;
+  title: string;
+  artist?: string;
+  thumbnail_url?: string;
+  thumbnail_key?: string;
+  context_id?: string;
+  tracks?: QueueTrack[];
+}
+
+interface QueueResponse {
+  group_id: string;
+  contexts: QueueContext[];
+  total_contexts: number;
+  total_tracks: number;
+  total_duration_ms: number;
+}
+
+interface PlaybackState {
+  group_id: string;
+  current_track_id: string;
+  current_track: {
+    id: string;
+    title: string;
+    artist: string;
+    duration_ms: number;
+  } | null;
+  position_ms: number;
+  playback_status: "playing" | "paused" | "stopped";
+  volume_level: number;
+  repeat_mode: "none" | "track" | "context";
+  shuffle: boolean;
+  has_next: boolean;
+  has_previous: boolean;
 }
 
 interface MusicItem {
@@ -46,6 +84,7 @@ interface MusicItem {
   title: string;
   artist?: string;
   durationSeconds: number;
+  thumbnailUrl?: string;
   fileUrl: string;
   album?: string;
   genre?: string;
@@ -60,6 +99,21 @@ interface MusicItem {
   updatedAt: string;
 }
 
+interface Playlist {
+  id: string;
+  name: string;
+  description?: string;
+  coverUrl?: string;
+  userId?: string;
+  isPublic?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  trackCount: number;
+  totalDurationSeconds: number;
+  total_duration_ms?: number;
+  track_count?: number;
+}
+
 interface Song {
   id: string;
   title: string;
@@ -67,18 +121,35 @@ interface Song {
   duration: string;
   durationSeconds: number;
   cover: string;
-  fileUrl?: string;
-  storageKey?: string;
+  contextId: string;
+  contextType: "track" | "playlist" | "album";
+  isPlaylistTrack: boolean;
+}
+
+interface QueueItem {
+  contextId: string;
+  type: "track" | "playlist" | "album";
+  title: string;
+  artist?: string;
+  trackCount: number;
+  totalDurationMs: number;
+  thumbnail?: string;
+  tracks: Song[];
 }
 
 const DEFAULT_COVER = "/images/music/starboy.svg";
 
-// Fixed formatDuration function - rounds to nearest second
-const formatDuration = (seconds: number): string => {
-  if (!seconds || isNaN(seconds)) return "00:00";
+// Helper function to fix malformed URLs
+const fixThumbnailUrl = (url?: string): string | undefined => {
+  if (!url) return undefined;
+  // Fix malformed URLs like "https://iotek.tn-cdn.netmusic/..." -> "https://iotek.tn-cdn.net/music/..."
+  return url.replace(/iotek\.tn-cdn\.net([a-z])/g, "iotek.tn-cdn.net/$1");
+};
 
-  // Round to nearest integer
-  const totalSeconds = Math.round(seconds);
+const formatDuration = (milliseconds: number): string => {
+  if (!milliseconds || isNaN(milliseconds)) return "00:00";
+
+  const totalSeconds = Math.round(milliseconds / 1000);
 
   const hours = Math.floor(totalSeconds / 3600);
   const mins = Math.floor((totalSeconds % 3600) / 60);
@@ -90,7 +161,6 @@ const formatDuration = (seconds: number): string => {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 };
 
-/** Deterministic color palette and SVG placeholder generator */
 function pickColorForText(text?: string) {
   const palette = [
     "#EF4444",
@@ -133,168 +203,291 @@ function generatePlaceholderCover(text?: string, size = 400) {
 }
 
 const QueuePanel: React.FC = () => {
-  const [queue, setQueue] = useState<Song[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [loadingGroups, setLoadingGroups] = useState<boolean>(true);
+  const [showGroupDropdown, setShowGroupDropdown] = useState<boolean>(false);
+
+  const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
+  const [allSongs, setAllSongs] = useState<Song[]>([]);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
-  const [currentQueueIndex, setCurrentQueueIndex] = useState<number>(0);
+  const [currentSongIndex, setCurrentSongIndex] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoadingNavigation, setIsLoadingNavigation] = useState<boolean>(false);
-  const [showAddMusic, setShowAddMusic] = useState<boolean>(false);
+  const [showAddPanel, setShowAddPanel] = useState<boolean>(false);
+  const [addPanelTab, setAddPanelTab] = useState<"music" | "playlist">("music");
   const [availableMusic, setAvailableMusic] = useState<MusicItem[]>([]);
+  const [availablePlaylists, setAvailablePlaylists] = useState<Playlist[]>([]);
   const [loadingMusic, setLoadingMusic] = useState<boolean>(false);
+  const [loadingPlaylists, setLoadingPlaylists] = useState<boolean>(false);
   const [selectedMusicIds, setSelectedMusicIds] = useState<Set<string>>(new Set());
-  const [addingMusic, setAddingMusic] = useState<boolean>(false);
+  const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<Set<string>>(new Set());
+  const [addingToQueue, setAddingToQueue] = useState<boolean>(false);
   const [searchMusicTerm, setSearchMusicTerm] = useState<string>("");
+  const [searchPlaylistTerm, setSearchPlaylistTerm] = useState<string>("");
   const [isClearing, setIsClearing] = useState<boolean>(false);
-  const [isRemovingSongAtPosition, setIsRemovingSongAtPosition] = useState<number | null>(null);
+  const [isRemovingContextAtPosition, setIsRemovingContextAtPosition] = useState<number | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
   const [isPlaybackSeeking, setIsPlaybackSeeking] = useState<boolean>(false);
+  const [volume, setVolume] = useState<number>(60);
+  const [shouldRefreshMusicTab, setShouldRefreshMusicTab] = useState<boolean>(false);
+  const [shouldRefreshPlaylistTab, setShouldRefreshPlaylistTab] = useState<boolean>(false);
 
-  // Use useRef to maintain audio element across renders
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const playbackStartTimeRef = useRef<number>(0);
+  const lastSyncTimeRef = useRef<number>(0);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Generate music URL from storage key
-  const getMusicUrl = useCallback((storageKey: string): string => {
-    return `${IOT_BASE_URL}/${storageKey}`;
-  }, []);
+  const groupId = selectedGroup?.id || "";
 
-  // Check if previous button should be disabled (first song)
-  const isPreviousDisabled = currentQueueIndex === 0 || queue.length === 0;
+  const isPreviousDisabled = currentSongIndex === 0 || allSongs.length === 0;
+  const isNextDisabled = currentSongIndex === allSongs.length - 1 || allSongs.length === 0;
 
-  // Check if next button should be disabled (last song)
-  const isNextDisabled = currentQueueIndex === queue.length - 1 || queue.length === 0;
-
-  // ✅ MEMOIZED handleTimeUpdate - no dependencies
-  const handleTimeUpdate = useCallback(() => {
-    if (audioRef.current) {
-      const roundedTime = Math.round(audioRef.current.currentTime);
-      setCurrentTime(roundedTime);
-    }
-  }, []);
-
-  // ✅ MEMOIZED handleEnded - depends only on isPlaying
-  const handleEnded = useCallback(async () => {
-    // If last song, stop playback
-    if (currentQueueIndex === queue.length - 1 || queue.length === 0) {
-      setIsPlaying(false);
-      return;
-    }
-
-    // Only auto-play next if currently playing
-    if (isPlaying) {
-      // Call next API
+  useEffect(() => {
+    const fetchGroups = async () => {
       try {
-        if (!TEKNIX_USER_SESSION_TOKEN) {
-          throw new Error("Session token not found");
-        }
-
-        const response = await axiosClient.post(
-          `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/next`
-        );
+        setLoadingGroups(true);
+        const response = await axiosClient.get(`${API_URL}/api/v1/groups/list`);
 
         if (response.data?.success && response.data?.data) {
-          const queuePosition = response.data.data.queue_position || 0;
+          const groupsList: Group[] = response.data.data;
+          setGroups(groupsList);
 
-          if (queue.length > 0 && queuePosition < queue.length) {
-            setCurrentQueueIndex(queuePosition);
-            setCurrentSong(queue[queuePosition]);
-            setCurrentTime(0);
-            setIsPlaying(true);
+          if (groupsList.length > 0) {
+            setSelectedGroup(groupsList[0]);
           }
         }
       } catch (err: any) {
-        console.error("Error playing next song:", err);
+        setError("Failed to fetch groups");
+      } finally {
+        setLoadingGroups(false);
       }
-    }
-  }, [isPlaying, queue]);
+    };
 
-  // Cleanup audio on unmount
+    fetchGroups();
+  }, []);
+
+  useEffect(() => {
+    if (!isPlaying || !currentSong) {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+      return;
+    }
+
+    playbackStartTimeRef.current = Date.now();
+    lastSyncTimeRef.current = currentTime;
+
+    progressIntervalRef.current = setInterval(() => {
+      setCurrentTime((prevTime) => {
+        const elapsedSeconds = (Date.now() - playbackStartTimeRef.current) / 1000;
+        const newTime = lastSyncTimeRef.current + elapsedSeconds;
+
+        if (newTime >= currentSong.durationSeconds) {
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+          }
+          return currentSong.durationSeconds;
+        }
+
+        return newTime;
+      });
+    }, 100);
+
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+    };
+  }, [isPlaying, currentSong]);
+
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = "";
-        audioRef.current = null;
-      }
-      if (audioTimeoutRef.current) {
-        clearTimeout(audioTimeoutRef.current);
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
       }
     };
   }, []);
 
-  // Fetch queue data and stop playback on initial load
+  const formatQueueData = (queueData: QueueResponse) => {
+    const formattedQueueItems: QueueItem[] = [];
+    const allSongsFlattened: Song[] = [];
+
+    queueData.contexts.forEach((context) => {
+      if (context.type === "track") {
+        const fixedThumbnailUrl = fixThumbnailUrl(context.thumbnail_url);
+        const song: Song = {
+          id: context.id,
+          title: context.title ?? "Unknown Title",
+          artist: context.artist ?? "Unknown Artist",
+          duration: formatDuration(context.total_duration_ms ?? 0),
+          durationSeconds: Math.round((context.total_duration_ms ?? 0) / 1000),
+          cover: fixedThumbnailUrl
+            ? fixedThumbnailUrl
+            : generatePlaceholderCover(context.title ?? "Unknown Title"),
+          contextId: context.id,
+          contextType: "track",
+          isPlaylistTrack: false,
+        };
+
+        allSongsFlattened.push(song);
+
+        formattedQueueItems.push({
+          contextId: context.id,
+          type: "track",
+          title: context.title ?? "Unknown Title",
+          artist: context.artist ?? "Unknown Artist",
+          trackCount: 1,
+          totalDurationMs: context.total_duration_ms ?? 0,
+          thumbnail: fixedThumbnailUrl,
+          tracks: [song],
+        });
+      } else if (context.type === "playlist" || context.type === "album") {
+        const playlistTracks: Song[] = [];
+
+        context.tracks?.forEach((track) => {
+          const fixedTrackThumbnailUrl = fixThumbnailUrl(track.thumbnail_url);
+          const song: Song = {
+            id: track.id,
+            title: track.title ?? "Unknown Title",
+            artist: track.artist ?? "Unknown Artist",
+            duration: formatDuration(track.duration_ms),
+            durationSeconds: Math.round(track.duration_ms / 1000),
+            cover: fixedTrackThumbnailUrl
+              ? fixedTrackThumbnailUrl
+              : track.thumbnail_key
+                ? `${IOT_BASE_URL}/${track.thumbnail_key}`
+                : generatePlaceholderCover(track.title ?? "Unknown Title"),
+            contextId: context.id,
+            contextType: context.type,
+            isPlaylistTrack: true,
+          };
+
+          playlistTracks.push(song);
+          allSongsFlattened.push(song);
+        });
+
+        const fixedContextThumbnailUrl = fixThumbnailUrl(context.thumbnail_url);
+        formattedQueueItems.push({
+          contextId: context.id,
+          type: context.type,
+          title: context.title ?? "Unknown Title",
+          artist: context.artist ?? "Unknown Artist",
+          trackCount: context.track_count,
+          totalDurationMs: context.total_duration_ms ?? 0,
+          thumbnail: fixedContextThumbnailUrl,
+          tracks: playlistTracks,
+        });
+      }
+    });
+
+    return { formattedQueueItems, allSongsFlattened };
+  };
+
+  // ✅ IMPROVED: Fixed track ID matching for page refresh
+  const syncPlaybackStateWithQueue = async (songs: Song[], queueItems: QueueItem[]) => {
+    if (!groupId || songs.length === 0) {
+      setCurrentSongIndex(0);
+      setCurrentSong(songs[0] || null);
+      setCurrentTime(0);
+      setIsPlaying(false);
+      lastSyncTimeRef.current = 0;
+      return;
+    }
+
+    try {
+      const playbackResponse = await axiosClient.get(
+        `${API_URL}/api/v1/groups/${groupId}/playback/state`
+      );
+
+      if (playbackResponse.data?.success && playbackResponse.data?.data) {
+        const playbackState: PlaybackState = playbackResponse.data.data;
+
+        if (playbackState.current_track_id) {
+          // ✅ IMPROVED: Search through all songs including nested tracks
+          let matchingSong: Song | undefined = undefined;
+          let matchingIndex: number = -1;
+
+          // Explicit loop with early exit for better track matching
+          for (let i = 0; i < songs.length; i++) {
+            if (songs[i].id === playbackState.current_track_id) {
+              matchingSong = songs[i];
+              matchingIndex = i;
+              break;
+            }
+          }
+
+          if (matchingSong && matchingIndex !== -1) {
+            setCurrentSongIndex(matchingIndex);
+            setCurrentSong(matchingSong);
+            const currentTimeSeconds = Math.round(playbackState.position_ms / 1000);
+            setCurrentTime(currentTimeSeconds);
+            lastSyncTimeRef.current = currentTimeSeconds;
+            setIsPlaying(playbackState.playback_status === "playing");
+            setVolume(playbackState.volume_level);
+            return;
+          }
+        }
+
+        // Fallback: if current_track_id not found, start from beginning
+        setCurrentSongIndex(0);
+        setCurrentSong(songs[0] || null);
+        setCurrentTime(0);
+        setIsPlaying(false);
+        lastSyncTimeRef.current = 0;
+      }
+    } catch (playbackErr: any) {
+      // On error, reset to first song
+      setCurrentSongIndex(0);
+      setCurrentSong(songs[0] || null);
+      setCurrentTime(0);
+      setIsPlaying(false);
+      lastSyncTimeRef.current = 0;
+    }
+  };
+
   useEffect(() => {
+    if (!groupId) return;
+
     const initializeQueue = async () => {
       try {
         setLoading(true);
         setError(null);
 
-        if (!TEKNIX_USER_SESSION_TOKEN) {
-          throw new Error("Session token not found");
-        }
-
-        // Send stop request to reset playback position to 0
-        try {
-          await axiosClient.post(
-            `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/stop`
-          );
-          console.log("Playback position reset to 0");
-        } catch (stopErr: any) {
-          console.warn("Warning: Could not reset playback position:", stopErr);
-          // Continue even if stop fails
-        }
-
-        // Fetch queue data
-        const response = await axiosClient.get(
-          `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`
+        const queueResponse = await axiosClient.get(
+          `${API_URL}/api/v1/groups/${groupId}/queue`
         );
 
-        if (response.data?.success && response.data?.data?.queue) {
-          const queueItems = response.data.data.queue;
-          const queuePosition = response.data.data.queue_position || 0;
+        if (queueResponse.data?.success && queueResponse.data?.data) {
+          const queueData: QueueResponse = queueResponse.data.data;
+          const { formattedQueueItems, allSongsFlattened } = formatQueueData(queueData);
 
-          // Format songs directly from queue response
-          const formattedSongs = queueItems.map((item: QueueSong) => {
-            return {
-              id: item.id,
-              title: item.title ?? "Unknown Title",
-              artist: item.artist ?? "Unknown Artist",
-              duration: formatDuration(item.durationSeconds),
-              durationSeconds: item.durationSeconds,
-              cover: generatePlaceholderCover(item.title ?? "Unknown Title"),
-              fileUrl: getMusicUrl(item.storageKey),
-              storageKey: item.storageKey,
-            };
-          });
+          setQueueItems(formattedQueueItems);
+          setAllSongs(allSongsFlattened);
 
-          setQueue(formattedSongs);
-          setCurrentQueueIndex(queuePosition);
-
-          if (formattedSongs.length > 0 && queuePosition < formattedSongs.length) {
-            setCurrentSong(formattedSongs[queuePosition]);
-          } else if (formattedSongs.length > 0) {
-            setCurrentSong(formattedSongs[0]);
-          }
+          // ✅ IMPROVED: Sync with playback state after queue is loaded
+          await syncPlaybackStateWithQueue(allSongsFlattened, formattedQueueItems);
         } else {
           throw new Error("Invalid response format");
         }
       } catch (err: any) {
-        console.error("Error initializing queue:", err);
         setError(err?.message ?? "Failed to fetch queue");
-        setQueue([]);
+        setQueueItems([]);
+        setAllSongs([]);
       } finally {
         setLoading(false);
       }
     };
 
     initializeQueue();
-  }, [getMusicUrl]);
+  }, [groupId]);
 
-  // Fetch available music
-  const fetchAvailableMusic = async () => {
+  const fetchAvailableMusic = useCallback(async () => {
     try {
       setLoadingMusic(true);
       const response = await axiosClient.get(`${API_URL}/api/v1/music`);
@@ -303,297 +496,302 @@ const QueuePanel: React.FC = () => {
         setAvailableMusic(response.data.data.data);
       }
     } catch (err: any) {
-      console.error("Error fetching music:", err);
+      setAvailableMusic([]);
     } finally {
       setLoadingMusic(false);
     }
+  }, []);
+
+  const fetchAvailablePlaylists = useCallback(async () => {
+    try {
+      setLoadingPlaylists(true);
+      const response = await axiosClient.get(`${API_URL}/api/v1/playlists`);
+
+      if (response.data?.success && response.data?.data?.data) {
+        const playlists = response.data.data.data.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          coverUrl: p.coverUrl,
+          userId: p.userId,
+          isPublic: p.isPublic,
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
+          trackCount: p.trackCount,
+          totalDurationSeconds: p.totalDurationSeconds,
+          total_duration_ms: (p.totalDurationSeconds || 0) * 1000,
+          track_count: p.trackCount,
+        }));
+        setAvailablePlaylists(playlists);
+      } else if (response.data?.success && Array.isArray(response.data?.data)) {
+        setAvailablePlaylists(response.data.data);
+      }
+    } catch (err: any) {
+      setAvailablePlaylists([]);
+    } finally {
+      setLoadingPlaylists(false);
+    }
+  }, []);
+
+  // Fetch music when panel opens or music tab is selected and shouldRefreshMusicTab is true
+  useEffect(() => {
+    if (showAddPanel && addPanelTab === "music" && shouldRefreshMusicTab) {
+      fetchAvailableMusic();
+      setShouldRefreshMusicTab(false);
+    }
+  }, [showAddPanel, addPanelTab, shouldRefreshMusicTab, fetchAvailableMusic]);
+
+  // Fetch playlists when panel opens or playlist tab is selected and shouldRefreshPlaylistTab is true
+  useEffect(() => {
+    if (showAddPanel && addPanelTab === "playlist" && shouldRefreshPlaylistTab) {
+      fetchAvailablePlaylists();
+      setShouldRefreshPlaylistTab(false);
+    }
+  }, [showAddPanel, addPanelTab, shouldRefreshPlaylistTab, fetchAvailablePlaylists]);
+
+  const handleOpenAddPanel = (tab: "music" | "playlist") => {
+    setShowAddPanel(true);
+    setAddPanelTab(tab);
+
+    if (tab === "music") {
+      setShouldRefreshMusicTab(true);
+    } else {
+      setShouldRefreshPlaylistTab(true);
+    }
   };
 
-  // ✅ FIXED: Initialize audio element ONLY when currentSong changes (by ID)
-  useEffect(() => {
-    if (currentSong && currentSong.fileUrl) {
-      // Clean up existing audio element
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.removeEventListener("ended", handleEnded);
-        audioRef.current.removeEventListener("timeupdate", handleTimeUpdate);
-      }
+  const handleAddPanelTabChange = (tab: "music" | "playlist") => {
+    setAddPanelTab(tab);
 
-      // Create new audio element
-      const audio = new Audio();
-      audio.src = currentSong.fileUrl;
-      audio.currentTime = 0;
-
-      // Add event listeners
-      audio.addEventListener("ended", handleEnded);
-      audio.addEventListener("timeupdate", handleTimeUpdate);
-
-      audioRef.current = audio;
-
-      // Reset current time to 0 when switching tracks
-      setCurrentTime(0);
-
-      // Auto-play if isPlaying is true
-      if (isPlaying) {
-        audio.play().catch((err) => console.error("Error playing audio:", err));
-      }
-
-      return () => {
-        // Cleanup is handled separately on unmount
-      };
+    if (tab === "music") {
+      setShouldRefreshMusicTab(true);
+    } else {
+      setShouldRefreshPlaylistTab(true);
     }
-  }, [currentSong?.id]); // ✅ ONLY depend on song ID, NOT on callbacks!
+  };
 
-  // Handle play/pause state - DO NOT modify currentTime here
-  useEffect(() => {
-    if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.play().catch((err) => console.error("Error playing audio:", err));
-      } else {
-        audioRef.current.pause();
-        // IMPORTANT: Do NOT reset currentTime here - just pause the audio
-      }
-    }
-  }, [isPlaying]);
-
-  // Handle play button click - NO PAYLOAD
   const handlePlayPause = async () => {
     try {
-      if (!TEKNIX_USER_SESSION_TOKEN) {
-        throw new Error("Session token not found");
-      }
+      if (!groupId) return;
 
       if (isPlaying) {
-        // Send pause request
         await axiosClient.post(
-          `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/pause`
+          `${API_URL}/api/v1/groups/${groupId}/playback/pause`
         );
-        // IMPORTANT: Do NOT reset currentTime - only change isPlaying state
         setIsPlaying(false);
       } else {
-        // Send play request WITHOUT payload
         await axiosClient.post(
-          `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/play`
+          `${API_URL}/api/v1/groups/${groupId}/playback/play`
         );
         setIsPlaying(true);
       }
     } catch (err: any) {
-      console.error("Error toggling playback:", err);
+      // Error handled silently
     }
   };
 
-  // Handle next song
   const handleNextSong = useCallback(async () => {
     try {
-      // Don't proceed if already on last song
+      if (!groupId) return;
+
       if (isNextDisabled) {
-        console.log("Already on last song, cannot play next");
         return;
       }
 
       setIsLoadingNavigation(true);
 
-      if (!TEKNIX_USER_SESSION_TOKEN) {
-        throw new Error("Session token not found");
-      }
-
-      console.log("Calling next song API...");
-
-      const response = await axiosClient.post(
-        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/next`
+      await axiosClient.post(
+        `${API_URL}/api/v1/groups/${groupId}/playback/next`
       );
 
-      console.log("Next song response:", response.data);
-
-      if (response.data?.success && response.data?.data) {
-        const queuePosition = response.data.data.queue_position || 0;
-
-        console.log("New queue position:", queuePosition);
-
-        if (queue.length > 0 && queuePosition < queue.length) {
-          setCurrentQueueIndex(queuePosition);
-          setCurrentSong(queue[queuePosition]);
-          setCurrentTime(0);
-          setIsPlaying(true);
-        }
+      const nextIndex = currentSongIndex + 1;
+      if (nextIndex < allSongs.length) {
+        setCurrentSongIndex(nextIndex);
+        setCurrentSong(allSongs[nextIndex]);
+        setCurrentTime(0);
+        lastSyncTimeRef.current = 0;
+        setIsPlaying(true);
       }
     } catch (err: any) {
-      console.error("Error playing next song:", err);
+      // Error handled silently
     } finally {
       setIsLoadingNavigation(false);
     }
-  }, [queue, isNextDisabled]);
+  }, [allSongs, isNextDisabled, groupId, currentSongIndex]);
 
-  // Handle previous song
   const handlePreviousSong = async () => {
     try {
-      // Don't proceed if already on first song
+      if (!groupId) return;
+
       if (isPreviousDisabled) {
         return;
       }
 
       setIsLoadingNavigation(true);
 
-      if (!TEKNIX_USER_SESSION_TOKEN) {
-        throw new Error("Session token not found");
-      }
-
-      const response = await axiosClient.post(
-        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/previous`
+      await axiosClient.post(
+        `${API_URL}/api/v1/groups/${groupId}/playback/previous`
       );
 
-      if (response.data?.success && response.data?.data) {
-        const queuePosition = response.data.data.queue_position || 0;
-
-        if (queue.length > 0 && queuePosition < queue.length) {
-          setCurrentQueueIndex(queuePosition);
-          setCurrentSong(queue[queuePosition]);
-          setCurrentTime(0);
-          setIsPlaying(true);
-        }
+      const prevIndex = currentSongIndex - 1;
+      if (prevIndex >= 0) {
+        setCurrentSongIndex(prevIndex);
+        setCurrentSong(allSongs[prevIndex]);
+        setCurrentTime(0);
+        lastSyncTimeRef.current = 0;
+        setIsPlaying(true);
       }
     } catch (err: any) {
-      console.error("Error playing previous song:", err);
+      // Error handled silently
     } finally {
       setIsLoadingNavigation(false);
     }
   };
 
-  // Handle skip backward (10 seconds) - USES SEEK-BACKWARD ENDPOINT
   const handleSkipBackward = async () => {
     try {
+      if (!groupId) return;
+
       setIsPlaybackSeeking(true);
 
-      if (!TEKNIX_USER_SESSION_TOKEN) {
-        throw new Error("Session token not found");
-      }
+      if (!currentSong) return;
 
-      if (!audioRef.current || !currentSong) return;
-
-      // Calculate new position (10 seconds backward, but not less than 0)
-      const newPositionSeconds = Math.max(0, audioRef.current.currentTime - 10);
-
-      console.log("Seeking backward 10 seconds...");
-
-      // Call seek-backward API with delta_ms
-      const response = await axiosClient.post(
-        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/seek-backward`,
-        { delta_ms: 10000 }
+      await axiosClient.post(
+        `${API_URL}/api/v1/groups/${groupId}/playback/seek-relative`,
+        { offset_ms: -10000 }
       );
 
-      console.log("Seek backward response:", response.data);
-
-      // Update local audio position
-      audioRef.current.currentTime = newPositionSeconds;
-      setCurrentTime(Math.round(newPositionSeconds));
+      const newPositionSeconds = Math.max(0, currentTime - 10);
+      setCurrentTime(newPositionSeconds);
+      lastSyncTimeRef.current = newPositionSeconds;
     } catch (err: any) {
-      console.error("Error seeking backward:", err);
+      // Error handled silently
     } finally {
       setIsPlaybackSeeking(false);
     }
   };
 
-  // Handle skip forward (10 seconds) - USES SEEK-FORWARD ENDPOINT
   const handleSkipForward = async () => {
     try {
+      if (!groupId) return;
+
       setIsPlaybackSeeking(true);
 
-      if (!TEKNIX_USER_SESSION_TOKEN) {
-        throw new Error("Session token not found");
-      }
+      if (!currentSong) return;
 
-      if (!audioRef.current || !currentSong) return;
+      const newPositionSeconds = Math.min(currentSong.durationSeconds, currentTime + 10);
 
-      // Calculate new position (10 seconds forward, but not more than duration)
-      const newPositionSeconds = Math.min(
-        currentSong.durationSeconds,
-        audioRef.current.currentTime + 10
+      await axiosClient.post(
+        `${API_URL}/api/v1/groups/${groupId}/playback/seek-relative`,
+        { offset_ms: 10000 }
       );
 
-      console.log("Seeking forward 10 seconds...");
-
-      // Call seek-forward API with delta_ms
-      const response = await axiosClient.post(
-        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/seek-forward`,
-        { delta_ms: 10000 }
-      );
-
-      console.log("Seek forward response:", response.data);
-
-      // Update local audio position
-      audioRef.current.currentTime = newPositionSeconds;
-      setCurrentTime(Math.round(newPositionSeconds));
+      setCurrentTime(newPositionSeconds);
+      lastSyncTimeRef.current = newPositionSeconds;
     } catch (err: any) {
-      console.error("Error seeking forward:", err);
+      // Error handled silently
     } finally {
       setIsPlaybackSeeking(false);
     }
   };
 
-  // Handle progress bar click - USES ABSOLUTE SEEK
   const handleProgressClick = async (e: React.MouseEvent<HTMLDivElement>) => {
     try {
-      if (!currentSong || !audioRef.current) return;
+      if (!groupId || !currentSong) return;
 
       setIsPlaybackSeeking(true);
-
-      if (!TEKNIX_USER_SESSION_TOKEN) {
-        throw new Error("Session token not found");
-      }
 
       const rect = e.currentTarget.getBoundingClientRect();
       const percent = (e.clientX - rect.left) / rect.width;
-      const newPositionSeconds = percent * currentSong.durationSeconds;
-      const newPositionMs = Math.round(newPositionSeconds * 1000);
+      const newPositionMs = Math.round(percent * currentSong.durationSeconds * 1000);
 
-      console.log("Seeking to position:", newPositionMs, "ms");
-
-      // Call seek API with absolute position
       await axiosClient.post(
-        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/seek`,
+        `${API_URL}/api/v1/groups/${groupId}/playback/seek`,
         { position_ms: newPositionMs }
       );
 
-      // Update local audio
-      audioRef.current.currentTime = newPositionSeconds;
-      setCurrentTime(Math.round(newPositionSeconds));
+      const newTime = Math.round(newPositionMs / 1000);
+      setCurrentTime(newTime);
+      lastSyncTimeRef.current = newTime;
     } catch (err: any) {
-      console.error("Error seeking to position:", err);
+      // Error handled silently
     } finally {
       setIsPlaybackSeeking(false);
     }
   };
 
-  // Handle song click from queue - NOW USES PLAY-TRACK ENDPOINT
-  const handleSongClick = async (song: Song, index: number) => {
+  const handleVolumeChange = (newVolume: number) => {
+    setVolume(newVolume);
+  };
+
+  const handleVolumeChangeEnd = async (newVolume: number) => {
     try {
-      if (!TEKNIX_USER_SESSION_TOKEN) {
-        throw new Error("Session token not found");
-      }
+      if (!groupId) return;
 
-      // First stop current playback
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = "";
-      }
-
-      // Send play-track request with queue position
       await axiosClient.post(
-        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/play-track`,
-        { queue_position: index }
+        `${API_URL}/api/v1/groups/${groupId}/playback/volume`,
+        { volume: newVolume }
       );
-
-      // Update state
-      setCurrentQueueIndex(index);
-      setCurrentSong(song);
-      setCurrentTime(0);
-      setIsPlaying(true);
     } catch (err: any) {
-      console.error("Error selecting song:", err);
+      // Error handled silently
     }
   };
 
-  // Toggle music selection
+  const handleSongClick = async (song: Song, index: number) => {
+    try {
+      if (!groupId) return;
+
+      let queuePosition = 0;
+      let trackIndex = 0;
+      let foundContext = false;
+
+      for (let i = 0; i < queueItems.length; i++) {
+        const item = queueItems[i];
+
+        if (item.type === "track") {
+          if (item.tracks[0]?.id === song.id) {
+            queuePosition = i;
+            trackIndex = 0;
+            foundContext = true;
+            break;
+          }
+        }
+
+        if (item.type === "playlist" || item.type === "album") {
+          const trackInContext = item.tracks.findIndex((t) => t.id === song.id);
+          if (trackInContext !== -1) {
+            queuePosition = i;
+            trackIndex = trackInContext;
+            foundContext = true;
+            break;
+          }
+        }
+      }
+
+      if (!foundContext) {
+        return;
+      }
+
+      const response = await axiosClient.post(
+        `${API_URL}/api/v1/groups/${groupId}/playback/play-at-position`,
+        {
+          queue_position: queuePosition,
+          track_index: trackIndex,
+        }
+      );
+
+      if (response.data?.success) {
+        setCurrentSongIndex(index);
+        setCurrentSong(song);
+        setCurrentTime(0);
+        lastSyncTimeRef.current = 0;
+        setIsPlaying(true);
+      }
+    } catch (err: any) {
+      // Error handled silently
+    }
+  };
+
   const toggleMusicSelection = (musicId: string) => {
     const newSelected = new Set(selectedMusicIds);
     if (newSelected.has(musicId)) {
@@ -604,177 +802,178 @@ const QueuePanel: React.FC = () => {
     setSelectedMusicIds(newSelected);
   };
 
-  // Add music to queue
-  const handleAddMusicToQueue = async () => {
+  const togglePlaylistSelection = (playlistId: string) => {
+    const newSelected = new Set(selectedPlaylistIds);
+    if (newSelected.has(playlistId)) {
+      newSelected.delete(playlistId);
+    } else {
+      newSelected.add(playlistId);
+    }
+    setSelectedPlaylistIds(newSelected);
+  };
+
+  const handleAddToQueue = async () => {
     try {
-      if (selectedMusicIds.size === 0) return;
-      setAddingMusic(true);
+      if (!groupId || (selectedMusicIds.size === 0 && selectedPlaylistIds.size === 0)) return;
+      setAddingToQueue(true);
 
-      if (!TEKNIX_USER_SESSION_TOKEN) {
-        throw new Error("Session token not found");
-      }
-
-      const musicIds = Array.from(selectedMusicIds);
-
-      const response = await axiosClient.post(
-        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`,
-        { music_ids: musicIds }
-      );
-
-      if (response.data?.success) {
-        // Refresh queue
-        const queueResponse = await axiosClient.get(
-          `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`
+      if (selectedMusicIds.size > 0) {
+        const musicIds = Array.from(selectedMusicIds);
+        const response = await axiosClient.post(
+          `${API_URL}/api/v1/groups/${groupId}/queue/tracks`,
+          { music_ids: musicIds, position: "end" }
         );
 
-        if (queueResponse.data?.success && queueResponse.data?.data?.queue) {
-          const queueItems = queueResponse.data.data.queue;
-          const queuePosition = queueResponse.data.data.queue_position || 0;
-
-          const formattedSongs = queueItems.map((item: QueueSong) => {
-            return {
-              id: item.id,
-              title: item.title ?? "Unknown Title",
-              artist: item.artist ?? "Unknown Artist",
-              duration: formatDuration(item.durationSeconds),
-              durationSeconds: item.durationSeconds,
-              cover: generatePlaceholderCover(item.title ?? "Unknown Title"),
-              fileUrl: getMusicUrl(item.storageKey),
-              storageKey: item.storageKey,
-            };
-          });
-
-          setQueue(formattedSongs);
-          setCurrentQueueIndex(queuePosition);
-
-          if (formattedSongs.length > 0 && queuePosition < formattedSongs.length) {
-            setCurrentSong(formattedSongs[queuePosition]);
-          } else if (formattedSongs.length > 0) {
-            setCurrentSong(formattedSongs[0]);
-          }
-
-          setSelectedMusicIds(new Set());
-          setShowAddMusic(false);
-          setSearchMusicTerm("");
+        if (!response.data?.success) {
+          throw new Error("Failed to add music to queue");
         }
       }
+
+      if (selectedPlaylistIds.size > 0) {
+        const playlistIds = Array.from(selectedPlaylistIds);
+        for (const playlistId of playlistIds) {
+          const response = await axiosClient.post(
+            `${API_URL}/api/v1/groups/${groupId}/queue/playlist`,
+            {
+              playlist_id: playlistId,
+              position: "end",
+              shuffle: false,
+            }
+          );
+
+          if (!response.data?.success) {
+            throw new Error("Failed to add playlist to queue");
+          }
+        }
+      }
+
+      const queueResponse = await axiosClient.get(
+        `${API_URL}/api/v1/groups/${groupId}/queue`
+      );
+
+      if (queueResponse.data?.success && queueResponse.data?.data) {
+        const queueData: QueueResponse = queueResponse.data.data;
+        const { formattedQueueItems, allSongsFlattened } = formatQueueData(queueData);
+
+        setQueueItems(formattedQueueItems);
+        setAllSongs(allSongsFlattened);
+        setSelectedMusicIds(new Set());
+        setSelectedPlaylistIds(new Set());
+        setShowAddPanel(false);
+        setSearchMusicTerm("");
+        setSearchPlaylistTerm("");
+      }
     } catch (err: any) {
-      console.error("Error adding music to queue:", err);
+      alert(err.message || "Failed to add items to queue");
     } finally {
-      setAddingMusic(false);
+      setAddingToQueue(false);
     }
   };
 
-  // Clear entire queue
   const handleClearQueue = async () => {
     try {
+      if (!groupId) return;
+
       setIsClearing(true);
 
-      if (!TEKNIX_USER_SESSION_TOKEN) {
-        throw new Error("Session token not found");
-      }
-
       const response = await axiosClient.delete(
-        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`
+        `${API_URL}/api/v1/groups/${groupId}/queue`
       );
 
       if (response.data?.success) {
-        // Send stop request
         await axiosClient.post(
-          `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/stop`
+          `${API_URL}/api/v1/groups/${groupId}/playback/stop`
         );
 
-        // Stop audio
-        if (audioRef.current) {
-          audioRef.current.pause();
-          audioRef.current.src = "";
-        }
-
-        setQueue([]);
+        setQueueItems([]);
+        setAllSongs([]);
         setCurrentSong(null);
-        setCurrentQueueIndex(0);
+        setCurrentSongIndex(0);
         setCurrentTime(0);
+        lastSyncTimeRef.current = 0;
         setIsPlaying(false);
         setShowClearConfirm(false);
       }
     } catch (err: any) {
-      console.error("Error clearing queue:", err);
+      // Error handled silently
     } finally {
       setIsClearing(false);
     }
   };
 
-  // Remove song at specific position - FIXED: Track by position index, not song ID
-  const handleRemoveSongAtPosition = async (position: number) => {
+  const handleRemoveContextAtPosition = async (position: number) => {
     try {
-      // Set loading state by position index, not by song ID
-      setIsRemovingSongAtPosition(position);
+      if (!groupId) return;
 
-      if (!TEKNIX_USER_SESSION_TOKEN) {
-        throw new Error("Session token not found");
-      }
+      setIsRemovingContextAtPosition(position);
 
-      const response = await axiosClient.delete(
-        `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue/${position}`
-      );
+      if (queueItems[position]) {
+        const contextId = queueItems[position].contextId;
 
-      if (response.data?.success) {
-        // Refresh queue
-        const queueResponse = await axiosClient.get(
-          `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`
+        const response = await axiosClient.delete(
+          `${API_URL}/api/v1/groups/${groupId}/queue/context/${contextId}`
         );
 
-        if (queueResponse.data?.success && queueResponse.data?.data?.queue) {
-          const queueItems = queueResponse.data.data.queue;
-          const queuePosition = queueResponse.data.data.queue_position || 0;
+        if (response.data?.success) {
+          const queueResponse = await axiosClient.get(
+            `${API_URL}/api/v1/groups/${groupId}/queue`
+          );
 
-          const formattedSongs = queueItems.map((item: QueueSong) => {
-            return {
-              id: item.id,
-              title: item.title ?? "Unknown Title",
-              artist: item.artist ?? "Unknown Artist",
-              duration: formatDuration(item.durationSeconds),
-              durationSeconds: item.durationSeconds,
-              cover: generatePlaceholderCover(item.title ?? "Unknown Title"),
-              fileUrl: getMusicUrl(item.storageKey),
-              storageKey: item.storageKey,
-            };
-          });
+          if (queueResponse.data?.success && queueResponse.data?.data) {
+            const queueData: QueueResponse = queueResponse.data.data;
+            const { formattedQueueItems, allSongsFlattened } = formatQueueData(queueData);
 
-          setQueue(formattedSongs);
-          setCurrentQueueIndex(queuePosition);
+            setQueueItems(formattedQueueItems);
+            setAllSongs(allSongsFlattened);
 
-          if (formattedSongs.length > 0 && queuePosition < formattedSongs.length) {
-            setCurrentSong(formattedSongs[queuePosition]);
-          } else if (formattedSongs.length > 0) {
-            setCurrentSong(formattedSongs[0]);
-          } else {
-            setCurrentSong(null);
+            await syncPlaybackStateWithQueue(allSongsFlattened, formattedQueueItems);
           }
         }
       }
     } catch (err: any) {
-      console.error("Error removing song from queue:", err);
+      // Error handled silently
     } finally {
-      // Clear loading state by position
-      setIsRemovingSongAtPosition(null);
+      setIsRemovingContextAtPosition(null);
     }
   };
 
-  const progressPercentage = currentSong
-    ? (currentTime / currentSong.durationSeconds) * 100
-    : 0;
+  const handleCloseAddPanel = () => {
+    setShowAddPanel(false);
+    setSelectedMusicIds(new Set());
+    setSelectedPlaylistIds(new Set());
+    setSearchMusicTerm("");
+    setSearchPlaylistTerm("");
+    setShouldRefreshMusicTab(false);
+    setShouldRefreshPlaylistTab(false);
+  };
 
-  // Filter available music by search term - SHOW ALL MUSIC
-  const filteredAvailableMusic = availableMusic.filter((music) => {
-    const q = searchMusicTerm.toLowerCase();
+  if (loadingGroups) {
     return (
-      music.title.toLowerCase().includes(q) ||
-      (music.artist ?? "").toLowerCase().includes(q)
+      <div
+        className="bg-white rounded-3xl shadow-xl p-4 flex flex-col w-full"
+        style={{ maxWidth: "400px", margin: "0 auto" }}
+      >
+        <div className="flex items-center justify-center h-64">
+          <p className="text-gray-500">Loading groups...</p>
+        </div>
+      </div>
     );
-  });
+  }
 
-  if (loading) {
+  if (groups.length === 0) {
+    return (
+      <div
+        className="bg-white rounded-3xl shadow-xl p-4 flex flex-col w-full"
+        style={{ maxWidth: "400px", margin: "0 auto" }}
+      >
+        <div className="flex items-center justify-center h-64">
+          <p className="text-red-500">No groups available</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading && !currentSong) {
     return (
       <div
         className="bg-white rounded-3xl shadow-xl p-4 flex flex-col w-full"
@@ -787,7 +986,7 @@ const QueuePanel: React.FC = () => {
     );
   }
 
-  if (error) {
+  if (error && !currentSong) {
     return (
       <div
         className="bg-white rounded-3xl shadow-xl p-4 flex flex-col w-full"
@@ -800,13 +999,21 @@ const QueuePanel: React.FC = () => {
     );
   }
 
-  if (queue.length === 0 || !currentSong) {
+  if (allSongs.length === 0 || !currentSong) {
     return (
       <div
         className="bg-white rounded-3xl shadow-xl p-4 flex flex-col w-full"
         style={{ maxWidth: "400px", margin: "0 auto" }}
       >
-        <div className="flex items-center justify-center h-64">
+        <GroupSelector
+          groups={groups}
+          selectedGroup={selectedGroup}
+          showGroupDropdown={showGroupDropdown}
+          onShowDropdownChange={setShowGroupDropdown}
+          onGroupSelect={setSelectedGroup}
+        />
+
+        <div className="flex items-center justify-center h-48">
           <p className="text-gray-500">No songs in queue</p>
         </div>
       </div>
@@ -818,356 +1025,72 @@ const QueuePanel: React.FC = () => {
       className="bg-white rounded-3xl shadow-xl p-4 flex flex-col w-full"
       style={{ maxWidth: "400px", margin: "0 auto" }}
     >
-      {/* --- ALBUM --- */}
-      <div className="w-full mb-2 rounded-2xl overflow-hidden">
-        <img
-          src={currentSong.cover}
-          alt={currentSong.title}
-          className="w-full aspect-square object-cover"
-          onError={(e) => {
-            (e.target as HTMLImageElement).src = generatePlaceholderCover(
-              currentSong.title
-            );
-          }}
-        />
-      </div>
-      <h2 className="text-xl font-semibold text-center mt-3 line-clamp-1">
-        {currentSong.title}
-      </h2>
-      <p className="text-gray-500 text-sm text-center line-clamp-1">
-        {currentSong.artist}
-      </p>
+      <GroupSelector
+        groups={groups}
+        selectedGroup={selectedGroup}
+        showGroupDropdown={showGroupDropdown}
+        onShowDropdownChange={setShowGroupDropdown}
+        onGroupSelect={setSelectedGroup}
+      />
 
-      {/* --- Progress Bar --- */}
-      <div className="w-full mt-4">
-        <div
-          className="w-full h-2 bg-gray-200 rounded-full cursor-pointer hover:h-3 transition-all"
-          onClick={handleProgressClick}
-        >
-          <div
-            className="h-full bg-[#FF9100] rounded-full transition-all"
-            style={{ width: `${progressPercentage}%` }}
-          ></div>
-        </div>
-        <div className="flex justify-between text-xs text-gray-500 mt-1 font-medium">
-          <span>{formatDuration(currentTime)}</span>
-          <span>{currentSong.duration}</span>
-        </div>
-      </div>
+      <PlayerControls
+        currentSong={currentSong}
+        isPlaying={isPlaying}
+        currentTime={currentTime}
+        volume={volume}
+        isPreviousDisabled={isPreviousDisabled}
+        isNextDisabled={isNextDisabled}
+        isLoadingNavigation={isLoadingNavigation}
+        isPlaybackSeeking={isPlaybackSeeking}
+        onPlayPause={handlePlayPause}
+        onPrevious={handlePreviousSong}
+        onNext={handleNextSong}
+        onSkipBackward={handleSkipBackward}
+        onSkipForward={handleSkipForward}
+        onProgressClick={handleProgressClick}
+        onVolumeChange={handleVolumeChange}
+        onVolumeChangeEnd={handleVolumeChangeEnd}
+        onAddClick={handleOpenAddPanel}
+        formatDuration={formatDuration}
+        generatePlaceholderCover={generatePlaceholderCover}
+      />
 
-      {/* --- Controls --- */}
-      <div className="grid grid-cols-5 gap-2 mt-6 items-center justify-items-center">
-        <button
-          onClick={handlePreviousSong}
-          disabled={isLoadingNavigation || isPreviousDisabled}
-          className="bg-transparent hover:opacity-70 transition-opacity disabled:opacity-50"
-          aria-label="Previous song"
-        >
-          <SkipBack size={28} className="text-gray-700" />
-        </button>
-        <button
-          onClick={handleSkipBackward}
-          disabled={isPlaybackSeeking}
-          className="bg-transparent flex items-center justify-center relative hover:opacity-70 transition-opacity disabled:opacity-50"
-          aria-label="Rewind 10 seconds"
-        >
-          <RotateCcw size={32} className="text-gray-800" />
-          <span className="absolute text-xs font-bold text-gray-800 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-            10
-          </span>
-        </button>
-        <button
-          className="w-16 h-16 flex items-center justify-center bg-[#FF9100] text-white rounded-full shadow-md hover:bg-orange-600 transition-colors active:scale-95"
-          onClick={handlePlayPause}
-          aria-label={isPlaying ? "Pause" : "Play"}
-        >
-          {isPlaying ? <Pause size={34} /> : <Play size={34} />}
-        </button>
-        <button
-          onClick={handleSkipForward}
-          disabled={isPlaybackSeeking}
-          className="bg-transparent flex items-center justify-center relative hover:opacity-70 transition-opacity disabled:opacity-50"
-          aria-label="Forward 10 seconds"
-        >
-          <RotateCw size={32} className="text-gray-800" />
-          <span className="absolute text-xs font-bold text-gray-800 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-            10
-          </span>
-        </button>
-        <button
-          onClick={handleNextSong}
-          disabled={isLoadingNavigation || isNextDisabled}
-          className="bg-transparent hover:opacity-70 transition-opacity disabled:opacity-50"
-          aria-label="Next song"
-        >
-          <SkipForward size={28} className="text-gray-700" />
-        </button>
-      </div>
+      <AddToQueuePanel
+        isOpen={showAddPanel}
+        activeTab={addPanelTab}
+        availableMusic={availableMusic}
+        availablePlaylists={availablePlaylists}
+        loadingMusic={loadingMusic}
+        loadingPlaylists={loadingPlaylists}
+        selectedMusicIds={selectedMusicIds}
+        selectedPlaylistIds={selectedPlaylistIds}
+        addingToQueue={addingToQueue}
+        searchMusicTerm={searchMusicTerm}
+        searchPlaylistTerm={searchPlaylistTerm}
+        onClose={handleCloseAddPanel}
+        onTabChange={handleAddPanelTabChange}
+        onSearchMusicChange={setSearchMusicTerm}
+        onSearchPlaylistChange={setSearchPlaylistTerm}
+        onToggleMusicSelection={toggleMusicSelection}
+        onTogglePlaylistSelection={togglePlaylistSelection}
+        onAddToQueue={handleAddToQueue}
+        formatDuration={formatDuration}
+      />
 
-      {/* --- Extra Controls --- */}
-      <div className="grid grid-cols-4 gap-2 mt-6 mb-2 items-center justify-items-center">
-        <button
-          className="hover:opacity-70 transition-opacity"
-          aria-label="Speed"
-        >
-          <Gauge size={26} className="text-gray-700" />
-        </button>
-        <button
-          className="hover:opacity-70 transition-opacity"
-          aria-label="Sleep timer"
-        >
-          <Timer size={26} className="text-gray-700" />
-        </button>
-        <button
-          className="hover:opacity-70 transition-opacity"
-          aria-label="Cast"
-        >
-          <Cast size={26} className="text-gray-700" />
-        </button>
-        <button
-          onClick={() => {
-            setShowAddMusic(!showAddMusic);
-            if (!showAddMusic) {
-              fetchAvailableMusic();
-            }
-          }}
-          className="hover:opacity-70 transition-opacity"
-          aria-label="Add music"
-        >
-          <Plus size={26} className="text-gray-700" />
-        </button>
-      </div>
-
-      {/* --- Add Music Side Panel --- */}
-      {showAddMusic && (
-        <div className="fixed inset-0 z-[100000] flex">
-          <div
-            onClick={() => {
-              setShowAddMusic(false);
-              setSelectedMusicIds(new Set());
-              setSearchMusicTerm("");
-            }}
-            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-          />
-          <aside className="relative ml-auto w-full max-w-[560px] h-screen bg-white rounded-l-2xl shadow-xl flex flex-col">
-            {/* Header */}
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h3 className="text-xl font-semibold text-gray-800">
-                    Add Music to Queue
-                  </h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Select songs to add to your queue
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowAddMusic(false);
-                    setSelectedMusicIds(new Set());
-                    setSearchMusicTerm("");
-                  }}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <X size={24} />
-                </button>
-              </div>
-
-              {/* Search */}
-              <div className="relative">
-                <Search
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                  size={18}
-                />
-                <input
-                  type="text"
-                  placeholder="Search music..."
-                  value={searchMusicTerm}
-                  onChange={(e) => setSearchMusicTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
-                />
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {loadingMusic ? (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-gray-500">Loading music...</p>
-                </div>
-              ) : filteredAvailableMusic.length === 0 ? (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-gray-500 text-center">
-                    {searchMusicTerm ? "No matching music found" : "No music available"}
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {filteredAvailableMusic.map((music) => (
-                    <div
-                      key={music.id}
-                      onClick={() => toggleMusicSelection(music.id)}
-                      className={`flex items-center gap-3 p-4 rounded-lg cursor-pointer transition-all border-2 ${selectedMusicIds.has(music.id)
-                        ? "bg-orange-50 border-[#FF9100]"
-                        : "bg-gray-50 border-transparent hover:bg-gray-100"
-                        }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedMusicIds.has(music.id)}
-                        onChange={() => { }}
-                        className="w-4 h-4 cursor-pointer"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-800 truncate">
-                          {music.title}
-                        </p>
-                        <p className="text-xs text-gray-500 truncate">
-                          {music.artist || "Unknown Artist"} •{" "}
-                          {formatDuration(music.durationSeconds)}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="border-t border-gray-200 p-4 flex justify-end gap-3 bg-gray-50">
-              <button
-                onClick={() => {
-                  setShowAddMusic(false);
-                  setSelectedMusicIds(new Set());
-                  setSearchMusicTerm("");
-                }}
-                className="px-4 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAddMusicToQueue}
-                disabled={selectedMusicIds.size === 0 || addingMusic}
-                className="px-4 py-2 bg-[#FF9100] text-white rounded-lg hover:bg-orange-600 disabled:bg-orange-400 disabled:cursor-not-allowed transition-colors font-medium"
-              >
-                {addingMusic ? "Adding..." : `Add (${selectedMusicIds.size})`}
-              </button>
-            </div>
-          </aside>
-        </div>
-      )}
-
-      {/* --- Clear Queue Confirmation Dialog --- */}
-      {showClearConfirm && (
-        <div className="fixed inset-0 z-[100000] flex items-center justify-center">
-          <div
-            onClick={() => setShowClearConfirm(false)}
-            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-          />
-          <div className="relative bg-white rounded-2xl shadow-xl p-6 max-w-sm mx-4">
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">
-              Clear Queue?
-            </h3>
-            <p className="text-gray-500 mb-6">
-              Are you sure you want to clear all songs from the queue? This
-              action cannot be undone.
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowClearConfirm(false)}
-                className="px-4 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleClearQueue}
-                disabled={isClearing}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed transition-colors font-medium"
-              >
-                {isClearing ? "Clearing..." : "Clear Queue"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- Song List --- */}
-      <div className="mt-8 w-full">
-        <div className="flex justify-between items-center text-sm text-gray-500 mb-2">
-          <span>
-            {queue.length} song{queue.length !== 1 ? "s" : ""}
-          </span>
-          {queue.length > 0 && (
-            <button
-              onClick={() => setShowClearConfirm(true)}
-              className="text-red-500 hover:text-red-600 transition-colors text-sm font-medium"
-              aria-label="Clear queue"
-              title="Clear entire queue"
-            >
-              Clear Queue
-            </button>
-          )}
-        </div>
-
-        <div className="space-y-2 max-h-96 overflow-y-auto rounded-lg border border-gray-100">
-          {queue.map((song, index) => (
-            <div
-              key={`${song.id}-${index}`}
-              onClick={() => handleSongClick(song, index)}
-              className={`flex items-center justify-between px-3 py-3 transition-all duration-200 cursor-pointer group ${currentQueueIndex === index ? "bg-orange-50" : "hover:bg-gray-50"
-                }`}
-            >
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                {/* Position Index */}
-                <div className="w-8 flex-shrink-0">
-                  <p className="text-sm font-semibold text-gray-500 text-center">
-                    {index + 1}
-                  </p>
-                </div>
-                <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
-                  <img
-                    src={song.cover}
-                    alt={song.title}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src =
-                        generatePlaceholderCover(song.title);
-                    }}
-                  />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-800 truncate">
-                    {song.title}
-                  </p>
-                  <p className="text-xs text-gray-500 truncate">
-                    {song.duration}
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleRemoveSongAtPosition(index);
-                }}
-                disabled={isRemovingSongAtPosition === index}
-                className="p-1 text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50 flex-shrink-0"
-                aria-label="Remove song"
-              >
-                {isRemovingSongAtPosition === index ? (
-                  <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <Trash2 size={16} />
-                )}
-              </button>
-            </div>
-          ))}
-        </div>
-
-        <p className="text-center text-orange-500 text-sm mt-4 cursor-pointer hover:underline">
-          See All
-        </p>
-      </div>
+      <QueueList
+        queueItems={queueItems}
+        allSongs={allSongs}
+        currentSongIndex={currentSongIndex}
+        isRemovingContextAtPosition={isRemovingContextAtPosition}
+        showClearConfirm={showClearConfirm}
+        isClearing={isClearing}
+        onSongClick={handleSongClick}
+        onRemoveContext={handleRemoveContextAtPosition}
+        onClearQueueClick={() => setShowClearConfirm(true)}
+        onClearConfirmClose={() => setShowClearConfirm(false)}
+        onClearQueueConfirm={handleClearQueue}
+        generatePlaceholderCover={generatePlaceholderCover}
+      />
     </div>
   );
 };
