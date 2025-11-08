@@ -7,6 +7,7 @@ import GroupSelector from "./GroupSelector";
 import PlayerControls from "./PlayerControls";
 import AddToQueuePanel from "./AddToQueuePanel";
 import QueueList from "./QueueList";
+import EmptyQueuePanel from "./EmptyQueuePanel";
 
 interface Group {
   id: string;
@@ -862,6 +863,9 @@ const QueuePanel: React.FC = () => {
         setShowAddPanel(false);
         setSearchMusicTerm("");
         setSearchPlaylistTerm("");
+
+        // ✅ Sync playback after adding items to queue
+        await syncPlaybackStateWithQueue(allSongsFlattened, formattedQueueItems);
       }
     } catch (err: any) {
       alert(err.message || "Failed to add items to queue");
@@ -999,6 +1003,7 @@ const QueuePanel: React.FC = () => {
     );
   }
 
+  // ✅ NEW: Show empty state with add context panel
   if (allSongs.length === 0 || !currentSong) {
     return (
       <div
@@ -1013,9 +1018,33 @@ const QueuePanel: React.FC = () => {
           onGroupSelect={setSelectedGroup}
         />
 
-        <div className="flex items-center justify-center h-48">
-          <p className="text-gray-500">No songs in queue</p>
-        </div>
+        <EmptyQueuePanel
+          onAddMusicClick={() => handleOpenAddPanel("music")}
+          onAddPlaylistClick={() => handleOpenAddPanel("playlist")}
+          groupName={selectedGroup?.group_name || "Group"}
+        />
+
+        <AddToQueuePanel
+          isOpen={showAddPanel}
+          activeTab={addPanelTab}
+          availableMusic={availableMusic}
+          availablePlaylists={availablePlaylists}
+          loadingMusic={loadingMusic}
+          loadingPlaylists={loadingPlaylists}
+          selectedMusicIds={selectedMusicIds}
+          selectedPlaylistIds={selectedPlaylistIds}
+          addingToQueue={addingToQueue}
+          searchMusicTerm={searchMusicTerm}
+          searchPlaylistTerm={searchPlaylistTerm}
+          onClose={handleCloseAddPanel}
+          onTabChange={handleAddPanelTabChange}
+          onSearchMusicChange={setSearchMusicTerm}
+          onSearchPlaylistChange={setSearchPlaylistTerm}
+          onToggleMusicSelection={toggleMusicSelection}
+          onTogglePlaylistSelection={togglePlaylistSelection}
+          onAddToQueue={handleAddToQueue}
+          formatDuration={formatDuration}
+        />
       </div>
     );
   }
