@@ -588,6 +588,7 @@ const QueuePanel: React.FC = () => {
     }
   };
 
+  // ✅ SIMPLIFIED: Just toggle play/pause without fetching state
   const handlePlayPause = async () => {
     try {
       if (!groupId) return;
@@ -598,6 +599,7 @@ const QueuePanel: React.FC = () => {
         );
         setIsPlaying(false);
       } else {
+        // ✅ SIMPLIFIED: Just send play request, don't fetch state
         await axiosClient.post(
           `${API_URL}/api/v1/groups/${groupId}/playback/play`
         );
@@ -717,6 +719,7 @@ const QueuePanel: React.FC = () => {
     }
   };
 
+  // ✅ FIXED: Click to seek only (no drag)
   const handleProgressClick = async (e: React.MouseEvent<HTMLDivElement>) => {
     try {
       if (!groupId || !currentSong) return;
@@ -727,11 +730,13 @@ const QueuePanel: React.FC = () => {
       const percent = (e.clientX - rect.left) / rect.width;
       const newPositionMs = Math.round(percent * currentSong.durationSeconds * 1000);
 
+      // Send seek request
       await axiosClient.post(
         `${API_URL}/api/v1/groups/${groupId}/playback/seek`,
         { position_ms: newPositionMs }
       );
 
+      // ✅ Update timeline to the seeked position
       const newTime = newPositionMs / 1000;
       setCurrentTime(newTime);
       lastSyncTimeRef.current = newTime;

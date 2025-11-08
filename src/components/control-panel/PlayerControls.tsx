@@ -67,18 +67,15 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   generatePlaceholderCover,
 }) => {
   const [showVolumePanel, setShowVolumePanel] = useState<boolean>(false);
-  const [isDraggingProgress, setIsDraggingProgress] = useState<boolean>(false);
   const [displayTime, setDisplayTime] = useState<number>(currentTime);
   const volumeButtonRef = useRef<HTMLDivElement | null>(null);
   const volumeSliderRef = useRef<HTMLInputElement | null>(null);
   const progressBarRef = useRef<HTMLDivElement | null>(null);
 
-  // ✅ FIXED: Always sync displayTime with currentTime when not dragging
+  // ✅ FIXED: Sync displayTime with currentTime
   useEffect(() => {
-    if (!isDraggingProgress) {
-      setDisplayTime(currentTime);
-    }
-  }, [currentTime, isDraggingProgress]);
+    setDisplayTime(currentTime);
+  }, [currentTime]);
 
   const progressPercentage = currentSong
     ? (displayTime / currentSong.durationSeconds) * 100
@@ -100,60 +97,6 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [showVolumePanel]);
-
-  // ✅ Handle progress bar dragging
-  useEffect(() => {
-    if (!isDraggingProgress) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!progressBarRef.current) return;
-
-      const rect = progressBarRef.current.getBoundingClientRect();
-      const percent = (e.clientX - rect.left) / rect.width;
-      const newTime = percent * currentSong.durationSeconds;
-
-      setDisplayTime(Math.max(0, Math.min(newTime, currentSong.durationSeconds)));
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (!progressBarRef.current || !e.touches.length) return;
-
-      const rect = progressBarRef.current.getBoundingClientRect();
-      const touchX = e.touches[0].clientX;
-      const percent = (touchX - rect.left) / rect.width;
-      const newTime = percent * currentSong.durationSeconds;
-
-      setDisplayTime(Math.max(0, Math.min(newTime, currentSong.durationSeconds)));
-    };
-
-    const handleMouseUp = () => {
-      setIsDraggingProgress(false);
-    };
-
-    const handleTouchEnd = () => {
-      setIsDraggingProgress(false);
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("touchmove", handleTouchMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    document.addEventListener("touchend", handleTouchEnd);
-
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("touchmove", handleTouchMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.removeEventListener("touchend", handleTouchEnd);
-    };
-  }, [isDraggingProgress, currentSong.durationSeconds]);
-
-  const handleProgressMouseDown = () => {
-    setIsDraggingProgress(true);
-  };
-
-  const handleProgressTouchStart = () => {
-    setIsDraggingProgress(true);
-  };
 
   const handleProgressBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressBarRef.current) return;
@@ -206,18 +149,12 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
       <div className="w-full mt-4">
         <div
           ref={progressBarRef}
-          className="w-full h-2 bg-gray-200 rounded-full cursor-pointer hover:h-3 transition-all group relative"
+          className="w-full h-2 bg-gray-200 rounded-full cursor-pointer"
           onClick={handleProgressBarClick}
-          onMouseDown={handleProgressMouseDown}
-          onTouchStart={handleProgressTouchStart}
         >
           <div
             className="h-full bg-[#FF9100] rounded-full transition-all"
             style={{ width: `${progressPercentage}%` }}
-          />
-          <div
-            className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-[#FF9100] rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ left: `${progressPercentage}%`, transform: "translate(-50%, -50%)" }}
           />
         </div>
 
