@@ -1,11 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import axiosClient from "@/utils/axiosClient";
 import { API_URL } from "@/utils/constants";
 import CountryMap from "./CountryMap";
 import PaginationWithTextWitIcon from "../ui/pagination/PaginationWithTextWitIcon";
+import { ChevronDown } from "lucide-react";
 
 // ===== Type Definitions =====
 interface Device {
@@ -100,8 +101,27 @@ export default function DemographicCard() {
   const [selectedGroup, setSelectedGroup] = useState<string>("");
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
+  const [showGroupDropdown, setShowGroupDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
 
   const devicesPerPage = 5;
+
+  // ===== Close Dropdown on Outside Click =====
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowGroupDropdown(false);
+      }
+    };
+
+    if (showGroupDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showGroupDropdown]);
 
   // ===== Fetch Groups =====
   useEffect(() => {
@@ -235,6 +255,15 @@ export default function DemographicCard() {
     }
   };
 
+  const handleGroupSelect = (groupId: string) => {
+    setSelectedGroup(groupId);
+    setCurrentPage(1);
+    setShowGroupDropdown(false);
+  };
+
+  const currentGroupName = groups.find((g) => g.id === selectedGroup)?.group_name || "Select Group";
+  const currentGroupDeviceCount = groups.find((g) => g.id === selectedGroup)?.device_count || 0;
+
   // ===== Render =====
   if (loadingGroups) {
     return (
@@ -284,28 +313,54 @@ export default function DemographicCard() {
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
-      {/* ===== Header ===== */}
-      <div className="flex justify-between items-center w-full mb-6">
+      {/* ===== Header with Dropdown on Same Row ===== */}
+      <div className="flex justify-between items-center w-full mb-6 gap-4">
         <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
           Group device
         </h3>
-        <div className="flex gap-2">
-          {/* Group Dropdown */}
-          <select
-            value={selectedGroup}
-            onChange={(e) => {
-              setSelectedGroup(e.target.value);
-              setCurrentPage(1);
-            }}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03] dark:hover:text-gray-200 transition-colors"
+
+        {/* ===== Group Dropdown ===== */}
+        <div className="w-full max-w-xs relative" ref={dropdownRef}>
+          <button
+            onClick={() => setShowGroupDropdown(!showGroupDropdown)}
+            className="w-full flex items-center justify-between px-4 py-2 bg-white border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 transition-colors"
           >
-            <option value="">Select a group</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>
-                {group.group_name}
-              </option>
-            ))}
-          </select>
+            <div className="text-left">
+              <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                {currentGroupName}
+              </p>
+              {currentGroupDeviceCount > 0 && (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {currentGroupDeviceCount} device(s)
+                </p>
+              )}
+            </div>
+            <ChevronDown
+              size={18}
+              className={`text-gray-600 dark:text-gray-400 transition-transform flex-shrink-0 ${showGroupDropdown ? "rotate-180" : ""
+                }`}
+            />
+          </button>
+
+          {showGroupDropdown && (
+            <div className="absolute top-full right-0 left-0 mt-1 bg-white border border-gray-300 rounded shadow z-50 max-h-48 overflow-y-auto dark:bg-gray-800 dark:border-gray-700">
+              {groups.map((group) => (
+                <button
+                  key={group.id}
+                  onClick={() => handleGroupSelect(group.id)}
+                  className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${selectedGroup === group.id
+                    ? "font-medium bg-gray-50 dark:bg-gray-700"
+                    : ""
+                    }`}
+                >
+                  <p className="text-gray-800 dark:text-gray-200">{group.group_name}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {group.device_count || 0} device(s)
+                  </p>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

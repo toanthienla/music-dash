@@ -35,6 +35,7 @@ interface QueueTrack {
   duration_ms: number;
   thumbnail_key?: string;
   thumbnail_url?: string;
+  track_index?: number;
 }
 
 interface QueueContext {
@@ -70,6 +71,9 @@ interface PlaybackState {
     title: string;
     artist: string;
     duration_ms: number;
+    track_index?: number;
+    thumbnail_key?: string;
+    thumbnail_url?: string;
   } | null;
   position_ms: number;
   playback_status: "playing" | "paused" | "stopped";
@@ -143,7 +147,6 @@ const DEFAULT_COVER = "/images/music/starboy.svg";
 // Helper function to fix malformed URLs
 const fixThumbnailUrl = (url?: string): string | undefined => {
   if (!url) return undefined;
-  // Fix malformed URLs like "https://iotek.tn-cdn.netmusic/..." -> "https://iotek.tn-cdn.net/music/..."
   return url.replace(/iotek\.tn-cdn\.net([a-z])/g, "iotek.tn-cdn.net/$1");
 };
 
@@ -270,6 +273,7 @@ const QueuePanel: React.FC = () => {
     fetchGroups();
   }, []);
 
+  // ✅ FIXED: Progress interval that only runs when playing
   useEffect(() => {
     if (!isPlaying || !currentSong) {
       if (progressIntervalRef.current) {
@@ -279,14 +283,18 @@ const QueuePanel: React.FC = () => {
       return;
     }
 
+    // Set reference point when playback starts
     playbackStartTimeRef.current = Date.now();
-    lastSyncTimeRef.current = currentTime;
 
     progressIntervalRef.current = setInterval(() => {
       setCurrentTime((prevTime) => {
+        // Calculate elapsed time since this interval started
         const elapsedSeconds = (Date.now() - playbackStartTimeRef.current) / 1000;
+
+        // Add elapsed time to the last synced position
         const newTime = lastSyncTimeRef.current + elapsedSeconds;
 
+        // Don't exceed song duration
         if (newTime >= currentSong.durationSeconds) {
           if (progressIntervalRef.current) {
             clearInterval(progressIntervalRef.current);
@@ -315,6 +323,7 @@ const QueuePanel: React.FC = () => {
     };
   }, []);
 
+  // ✅ FIXED: Proper queue data formatting with correct track IDs
   const formatQueueData = (queueData: QueueResponse) => {
     const formattedQueueItems: QueueItem[] = [];
     const allSongsFlattened: Song[] = [];
@@ -322,8 +331,10 @@ const QueuePanel: React.FC = () => {
     queueData.contexts.forEach((context) => {
       if (context.type === "track") {
         const fixedThumbnailUrl = fixThumbnailUrl(context.thumbnail_url);
+        const trackId = context.tracks?.[0]?.id || context.id;
+
         const song: Song = {
-          id: context.id,
+          id: trackId, // ✅ USE TRACK ID, NOT CONTEXT ID
           title: context.title ?? "Unknown Title",
           artist: context.artist ?? "Unknown Artist",
           duration: formatDuration(context.total_duration_ms ?? 0),
@@ -331,7 +342,7 @@ const QueuePanel: React.FC = () => {
           cover: fixedThumbnailUrl
             ? fixedThumbnailUrl
             : generatePlaceholderCover(context.title ?? "Unknown Title"),
-          contextId: context.id,
+          contextId: context.id, // ✅ KEEP CONTEXT ID SEPARATE
           contextType: "track",
           isPlaylistTrack: false,
         };
@@ -354,7 +365,7 @@ const QueuePanel: React.FC = () => {
         context.tracks?.forEach((track) => {
           const fixedTrackThumbnailUrl = fixThumbnailUrl(track.thumbnail_url);
           const song: Song = {
-            id: track.id,
+            id: track.id, // ✅ USE ACTUAL TRACK ID
             title: track.title ?? "Unknown Title",
             artist: track.artist ?? "Unknown Artist",
             duration: formatDuration(track.duration_ms),
@@ -364,7 +375,7 @@ const QueuePanel: React.FC = () => {
               : track.thumbnail_key
                 ? `${IOT_BASE_URL}/${track.thumbnail_key}`
                 : generatePlaceholderCover(track.title ?? "Unknown Title"),
-            contextId: context.id,
+            contextId: context.id, // ✅ KEEP CONTEXT ID FOR QUEUE OPERATIONS
             contextType: context.type,
             isPlaylistTrack: true,
           };
@@ -390,7 +401,7 @@ const QueuePanel: React.FC = () => {
     return { formattedQueueItems, allSongsFlattened };
   };
 
-  // ✅ IMPROVED: Fixed track ID matching for page refresh
+  // ✅ FIXED: Sync playback state with proper track ID matching
   const syncPlaybackStateWithQueue = async (songs: Song[], queueItems: QueueItem[]) => {
     if (!groupId || songs.length === 0) {
       setCurrentSongIndex(0);
@@ -398,6 +409,7 @@ const QueuePanel: React.FC = () => {
       setCurrentTime(0);
       setIsPlaying(false);
       lastSyncTimeRef.current = 0;
+      playbackStartTimeRef.current = Date.now();
       return;
     }
 
@@ -410,12 +422,12 @@ const QueuePanel: React.FC = () => {
         const playbackState: PlaybackState = playbackResponse.data.data;
 
         if (playbackState.current_track_id) {
-          // ✅ IMPROVED: Search through all songs including nested tracks
+          // ✅ FIXED: Search by actual track ID from API response
           let matchingSong: Song | undefined = undefined;
           let matchingIndex: number = -1;
 
-          // Explicit loop with early exit for better track matching
           for (let i = 0; i < songs.length; i++) {
+            // Match by song.id which now contains the actual track ID
             if (songs[i].id === playbackState.current_track_id) {
               matchingSong = songs[i];
               matchingIndex = i;
@@ -426,9 +438,14 @@ const QueuePanel: React.FC = () => {
           if (matchingSong && matchingIndex !== -1) {
             setCurrentSongIndex(matchingIndex);
             setCurrentSong(matchingSong);
-            const currentTimeSeconds = Math.round(playbackState.position_ms / 1000);
-            setCurrentTime(currentTimeSeconds);
-            lastSyncTimeRef.current = currentTimeSeconds;
+
+            // ✅ CRITICAL: Set timeline to position_ms
+            const positionSeconds = playbackState.position_ms / 1000;
+            setCurrentTime(positionSeconds);
+            lastSyncTimeRef.current = positionSeconds;
+            playbackStartTimeRef.current = Date.now();
+
+            // Set playback status
             setIsPlaying(playbackState.playback_status === "playing");
             setVolume(playbackState.volume_level);
             return;
@@ -441,6 +458,7 @@ const QueuePanel: React.FC = () => {
         setCurrentTime(0);
         setIsPlaying(false);
         lastSyncTimeRef.current = 0;
+        playbackStartTimeRef.current = Date.now();
       }
     } catch (playbackErr: any) {
       // On error, reset to first song
@@ -449,6 +467,7 @@ const QueuePanel: React.FC = () => {
       setCurrentTime(0);
       setIsPlaying(false);
       lastSyncTimeRef.current = 0;
+      playbackStartTimeRef.current = Date.now();
     }
   };
 
@@ -471,7 +490,7 @@ const QueuePanel: React.FC = () => {
           setQueueItems(formattedQueueItems);
           setAllSongs(allSongsFlattened);
 
-          // ✅ IMPROVED: Sync with playback state after queue is loaded
+          // ✅ Call playback state sync ONLY ONCE here during initial load
           await syncPlaybackStateWithQueue(allSongsFlattened, formattedQueueItems);
         } else {
           throw new Error("Invalid response format");
@@ -534,7 +553,6 @@ const QueuePanel: React.FC = () => {
     }
   }, []);
 
-  // Fetch music when panel opens or music tab is selected and shouldRefreshMusicTab is true
   useEffect(() => {
     if (showAddPanel && addPanelTab === "music" && shouldRefreshMusicTab) {
       fetchAvailableMusic();
@@ -542,7 +560,6 @@ const QueuePanel: React.FC = () => {
     }
   }, [showAddPanel, addPanelTab, shouldRefreshMusicTab, fetchAvailableMusic]);
 
-  // Fetch playlists when panel opens or playlist tab is selected and shouldRefreshPlaylistTab is true
   useEffect(() => {
     if (showAddPanel && addPanelTab === "playlist" && shouldRefreshPlaylistTab) {
       fetchAvailablePlaylists();
@@ -611,6 +628,7 @@ const QueuePanel: React.FC = () => {
         setCurrentSong(allSongs[nextIndex]);
         setCurrentTime(0);
         lastSyncTimeRef.current = 0;
+        playbackStartTimeRef.current = Date.now();
         setIsPlaying(true);
       }
     } catch (err: any) {
@@ -640,6 +658,7 @@ const QueuePanel: React.FC = () => {
         setCurrentSong(allSongs[prevIndex]);
         setCurrentTime(0);
         lastSyncTimeRef.current = 0;
+        playbackStartTimeRef.current = Date.now();
         setIsPlaying(true);
       }
     } catch (err: any) {
@@ -665,6 +684,7 @@ const QueuePanel: React.FC = () => {
       const newPositionSeconds = Math.max(0, currentTime - 10);
       setCurrentTime(newPositionSeconds);
       lastSyncTimeRef.current = newPositionSeconds;
+      playbackStartTimeRef.current = Date.now();
     } catch (err: any) {
       // Error handled silently
     } finally {
@@ -689,6 +709,7 @@ const QueuePanel: React.FC = () => {
 
       setCurrentTime(newPositionSeconds);
       lastSyncTimeRef.current = newPositionSeconds;
+      playbackStartTimeRef.current = Date.now();
     } catch (err: any) {
       // Error handled silently
     } finally {
@@ -711,9 +732,10 @@ const QueuePanel: React.FC = () => {
         { position_ms: newPositionMs }
       );
 
-      const newTime = Math.round(newPositionMs / 1000);
+      const newTime = newPositionMs / 1000;
       setCurrentTime(newTime);
       lastSyncTimeRef.current = newTime;
+      playbackStartTimeRef.current = Date.now();
     } catch (err: any) {
       // Error handled silently
     } finally {
@@ -786,6 +808,7 @@ const QueuePanel: React.FC = () => {
         setCurrentSong(song);
         setCurrentTime(0);
         lastSyncTimeRef.current = 0;
+        playbackStartTimeRef.current = Date.now();
         setIsPlaying(true);
       }
     } catch (err: any) {
@@ -864,7 +887,7 @@ const QueuePanel: React.FC = () => {
         setSearchMusicTerm("");
         setSearchPlaylistTerm("");
 
-        // ✅ Sync playback after adding items to queue
+        // ✅ Sync playback after adding items to queue (ONCE)
         await syncPlaybackStateWithQueue(allSongsFlattened, formattedQueueItems);
       }
     } catch (err: any) {
@@ -895,6 +918,7 @@ const QueuePanel: React.FC = () => {
         setCurrentSongIndex(0);
         setCurrentTime(0);
         lastSyncTimeRef.current = 0;
+        playbackStartTimeRef.current = Date.now();
         setIsPlaying(false);
         setShowClearConfirm(false);
       }
@@ -930,6 +954,7 @@ const QueuePanel: React.FC = () => {
             setQueueItems(formattedQueueItems);
             setAllSongs(allSongsFlattened);
 
+            // ✅ Sync playback after removing context (ONCE)
             await syncPlaybackStateWithQueue(allSongsFlattened, formattedQueueItems);
           }
         }
@@ -1003,7 +1028,6 @@ const QueuePanel: React.FC = () => {
     );
   }
 
-  // ✅ NEW: Show empty state with add context panel
   if (allSongs.length === 0 || !currentSong) {
     return (
       <div
