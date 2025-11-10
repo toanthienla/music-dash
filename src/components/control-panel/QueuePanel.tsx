@@ -261,13 +261,21 @@ const QueuePanel: React.FC = () => {
   const isPreviousDisabled = currentSongIndex === 0 || allSongs.length === 0;
   const isNextDisabled = currentSongIndex === allSongs.length - 1 || allSongs.length === 0;
 
-  // Wrapper to handle group selection from UI: persist, set state, show switching UI
+  // Wrapper to handle group selection from UI: persist, set state, show switching UI only when changing group
   const handleGroupSelect = (g: Group) => {
     try {
       localStorage.setItem(STORAGE_KEY, g.id);
     } catch (e) {
       // ignore localStorage errors
     }
+
+    // If user clicked the already-selected group, just close dropdown and do nothing (don't show switching)
+    if (selectedGroup && selectedGroup.id === g.id) {
+      setSelectedGroup(g);
+      setShowGroupDropdown(false);
+      return;
+    }
+
     setSelectedGroup(g);
     setShowGroupDropdown(false);
     // show switching indicator while new queue is fetched

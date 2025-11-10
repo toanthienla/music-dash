@@ -1,3 +1,4 @@
+contents:
 "use client";
 
 import React, { useRef, useEffect } from "react";
@@ -59,43 +60,40 @@ const GroupSelector: React.FC<GroupSelectorProps> = ({
     <div className="mb-4 relative" ref={dropdownRef}>
       <button
         onClick={() => onShowDropdownChange(!showGroupDropdown)}
-        className="w-full flex items-center justify-between px-4 py-2 bg-white border border-gray-300 rounded hover:bg-gray-50"
+        className="w-full flex items-center justify-between px-4 py-2 bg-white border border-gray-300 rounded hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:hover:bg-gray-700 transition-colors"
       >
         <div className="text-left">
-          <p className="text-sm font-medium text-gray-800">
+          <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
             {selectedGroup?.group_name || "Select Group"}
           </p>
         </div>
         <ChevronDown
           size={18}
-          className={`text-gray-600 transition-transform ${showGroupDropdown ? "rotate-180" : ""
+          className={`text-gray-600 dark:text-gray-300 transition-transform ${showGroupDropdown ? "rotate-180" : ""
             }`}
         />
       </button>
 
       {showGroupDropdown && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded shadow z-50 max-h-48 overflow-y-auto">
-          {groups.map((group) => (
-            <button
-              key={group.id}
-              onClick={() => {
-                // persist selected group id in localStorage so the selection survives reloads
-                try {
-                  localStorage.setItem("selectedGroupId", group.id);
-                } catch (e) {
-                  // ignore localStorage errors (e.g., private mode)
-                }
-
-                onGroupSelect(group);
-                onShowDropdownChange(false);
-              }}
-              className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${selectedGroup?.id === group.id ? "font-medium" : ""
-                }`}
-            >
-              <p className="text-gray-800">{group.group_name}</p>
-              <p className="text-xs text-gray-500">{group.device_count} device(s)</p>
-            </button>
-          ))}
+        <div className="absolute top-full right-0 left-0 mt-1 bg-white border border-gray-300 rounded shadow z-50 max-h-48 overflow-y-auto dark:bg-gray-800 dark:border-gray-700">
+          {groups.map((group) => {
+            const isSelected = selectedGroup?.id === group.id;
+            return (
+              <button
+                key={group.id}
+                onClick={() => {
+                  // Delegate selection handling to parent (QueuePanel).
+                  onGroupSelect(group);
+                  onShowDropdownChange(false);
+                }}
+                className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${isSelected ? "font-medium bg-gray-50 dark:bg-gray-700" : ""
+                  }`}
+              >
+                <p className={`text-gray-800 dark:text-gray-200`}>{group.group_name}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{group.device_count} device(s)</p>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
