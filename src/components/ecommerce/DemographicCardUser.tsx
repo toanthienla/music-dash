@@ -106,6 +106,9 @@ export default function DemographicCard() {
 
   const devicesPerPage = 5;
 
+  // localStorage key for persistence
+  const STORAGE_KEY = "selectedGroupId";
+
   // ===== Close Dropdown on Outside Click =====
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -153,9 +156,38 @@ export default function DemographicCard() {
         console.log(`[DemographicCard] Fetched ${groupsList.length} groups`, groupsList);
         setGroups(groupsList);
 
-        // Auto-select first group if available
+        // Try to restore previously selected group from localStorage
+        let restoredId: string | null = null;
+        try {
+          restoredId = localStorage.getItem(STORAGE_KEY);
+        } catch (e) {
+          restoredId = null;
+        }
+
+        // If saved id exists and matches a fetched group, use it; otherwise use first group and persist it
+        if (restoredId) {
+          const matched = groupsList.find((g) => g.id === restoredId);
+          if (matched) {
+            setSelectedGroup(matched.id);
+            // ensure persisted value is consistent (write again is harmless)
+            try {
+              localStorage.setItem(STORAGE_KEY, matched.id);
+            } catch (e) {
+              // ignore
+            }
+            setLoadingGroups(false);
+            return;
+          }
+        }
+
+        // fallback: default to first group and persist to localStorage
         if (groupsList.length > 0) {
           setSelectedGroup(groupsList[0].id);
+          try {
+            localStorage.setItem(STORAGE_KEY, groupsList[0].id);
+          } catch (e) {
+            // ignore localStorage errors
+          }
         }
       } catch (err: any) {
         const errorMessage =
@@ -256,6 +288,12 @@ export default function DemographicCard() {
   };
 
   const handleGroupSelect = (groupId: string) => {
+    // persist selection
+    try {
+      localStorage.setItem(STORAGE_KEY, groupId);
+    } catch (e) {
+      // ignore localStorage errors
+    }
     setSelectedGroup(groupId);
     setCurrentPage(1);
     setShowGroupDropdown(false);

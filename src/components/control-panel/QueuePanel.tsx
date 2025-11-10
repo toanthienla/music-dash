@@ -75,6 +75,12 @@ interface PlaybackState {
     thumbnail_key?: string;
     thumbnail_url?: string;
   } | null;
+  current_context?: {
+    id: string;
+    type: "track" | "playlist" | "album" | string;
+    name?: string;
+    track_count?: number;
+  } | null;
   position_ms: number;
   playback_status: "playing" | "paused" | "stopped";
   volume_level: number;
@@ -218,7 +224,7 @@ const QueuePanel: React.FC = () => {
   const [currentSongIndex, setCurrentSongIndex] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false); // queue loading
   const [error, setError] = useState<string | null>(null);
   const [isLoadingNavigation, setIsLoadingNavigation] = useState<boolean>(false);
   const [showAddPanel, setShowAddPanel] = useState<boolean>(false);
@@ -240,14 +246,33 @@ const QueuePanel: React.FC = () => {
   const [shouldRefreshMusicTab, setShouldRefreshMusicTab] = useState<boolean>(false);
   const [shouldRefreshPlaylistTab, setShouldRefreshPlaylistTab] = useState<boolean>(false);
 
+  // New: indicate UI is switching groups and loading the queue
+  const [isSwitchingGroup, setIsSwitchingGroup] = useState<boolean>(false);
+
   const playbackStartTimeRef = useRef<number>(0);
   const lastSyncTimeRef = useRef<number>(0);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // persist key
+  const STORAGE_KEY = "selectedGroupId";
 
   const groupId = selectedGroup?.id || "";
 
   const isPreviousDisabled = currentSongIndex === 0 || allSongs.length === 0;
   const isNextDisabled = currentSongIndex === allSongs.length - 1 || allSongs.length === 0;
+
+  // Wrapper to handle group selection from UI: persist, set state, show switching UI
+  const handleGroupSelect = (g: Group) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, g.id);
+    } catch (e) {
+      // ignore localStorage errors
+    }
+    setSelectedGroup(g);
+    setShowGroupDropdown(false);
+    // show switching indicator while new queue is fetched
+    setIsSwitchingGroup(true);
+  };
 
   useEffect(() => {
     const fetchGroups = async () => {
@@ -259,8 +284,30 @@ const QueuePanel: React.FC = () => {
           const groupsList: Group[] = response.data.data;
           setGroups(groupsList);
 
-          if (groupsList.length > 0) {
+          // Try to restore previously selected group from localStorage
+          let restored: Group | null = null;
+          try {
+            const savedId = localStorage.getItem(STORAGE_KEY);
+            if (savedId) {
+              restored = groupsList.find((g) => g.id === savedId) || null;
+            }
+          } catch (e) {
+            restored = null;
+          }
+
+          if (restored) {
+            setSelectedGroup(restored);
+            // ensure we show switching indicator for initial queue load
+            setIsSwitchingGroup(true);
+          } else if (groupsList.length > 0) {
+            // default to first group and persist it
             setSelectedGroup(groupsList[0]);
+            try {
+              localStorage.setItem(STORAGE_KEY, groupsList[0].id);
+            } catch (e) {
+              // ignore localStorage errors
+            }
+            setIsSwitchingGroup(true);
           }
         }
       } catch (err: any) {
@@ -271,9 +318,20 @@ const QueuePanel: React.FC = () => {
     };
 
     fetchGroups();
+    // run once on mount
   }, []);
 
-  // ✅ FIXED: Progress interval that only runs when playing
+  // When selectedGroup changes (via UI or restored), persist it so reload remembers.
+  useEffect(() => {
+    if (!selectedGroup) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, selectedGroup.id);
+    } catch (e) {
+      // ignore write errors (e.g. private mode)
+    }
+  }, [selectedGroup]);
+
+  // Progress interval that only runs when playing
   useEffect(() => {
     if (!isPlaying || !currentSong) {
       if (progressIntervalRef.current) {
@@ -323,7 +381,7 @@ const QueuePanel: React.FC = () => {
     };
   }, []);
 
-  // ✅ FIXED: Proper queue data formatting with correct track IDs
+  // Proper queue data formatting with correct track IDs
   const formatQueueData = (queueData: QueueResponse) => {
     const formattedQueueItems: QueueItem[] = [];
     const allSongsFlattened: Song[] = [];
@@ -334,7 +392,7 @@ const QueuePanel: React.FC = () => {
         const trackId = context.tracks?.[0]?.id || context.id;
 
         const song: Song = {
-          id: trackId, // ✅ USE TRACK ID, NOT CONTEXT ID
+          id: trackId,
           title: context.title ?? "Unknown Title",
           artist: context.artist ?? "Unknown Artist",
           duration: formatDuration(context.total_duration_ms ?? 0),
@@ -342,7 +400,7 @@ const QueuePanel: React.FC = () => {
           cover: fixedThumbnailUrl
             ? fixedThumbnailUrl
             : generatePlaceholderCover(context.title ?? "Unknown Title"),
-          contextId: context.id, // ✅ KEEP CONTEXT ID SEPARATE
+          contextId: context.id,
           contextType: "track",
           isPlaylistTrack: false,
         };
@@ -365,7 +423,7 @@ const QueuePanel: React.FC = () => {
         context.tracks?.forEach((track) => {
           const fixedTrackThumbnailUrl = fixThumbnailUrl(track.thumbnail_url);
           const song: Song = {
-            id: track.id, // ✅ USE ACTUAL TRACK ID
+            id: track.id,
             title: track.title ?? "Unknown Title",
             artist: track.artist ?? "Unknown Artist",
             duration: formatDuration(track.duration_ms),
@@ -375,7 +433,7 @@ const QueuePanel: React.FC = () => {
               : track.thumbnail_key
                 ? `${IOT_BASE_URL}/${track.thumbnail_key}`
                 : generatePlaceholderCover(track.title ?? "Unknown Title"),
-            contextId: context.id, // ✅ KEEP CONTEXT ID FOR QUEUE OPERATIONS
+            contextId: context.id,
             contextType: context.type,
             isPlaylistTrack: true,
           };
@@ -401,7 +459,7 @@ const QueuePanel: React.FC = () => {
     return { formattedQueueItems, allSongsFlattened };
   };
 
-  // ✅ FIXED: Sync playback state with proper track ID matching
+  // Prefer matching by current_context.id first, then fall back to current_track_id
   const syncPlaybackStateWithQueue = async (songs: Song[], queueItems: QueueItem[]) => {
     if (!groupId || songs.length === 0) {
       setCurrentSongIndex(0);
@@ -421,38 +479,83 @@ const QueuePanel: React.FC = () => {
       if (playbackResponse.data?.success && playbackResponse.data?.data) {
         const playbackState: PlaybackState = playbackResponse.data.data;
 
-        if (playbackState.current_track_id) {
-          // ✅ FIXED: Search by actual track ID from API response
-          let matchingSong: Song | undefined = undefined;
-          let matchingIndex: number = -1;
+        let matchingSong: Song | undefined = undefined;
+        let matchingIndex: number = -1;
 
+        // 1) If API provides current_context.id, try to locate the context in the queue first.
+        if (playbackState.current_context?.id) {
+          const ctxId = playbackState.current_context.id;
+          const queueIndex = queueItems.findIndex((q) => q.contextId === ctxId);
+
+          if (queueIndex !== -1) {
+            const ctx = queueItems[queueIndex];
+
+            if (ctx.type === "track") {
+              matchingIndex = songs.findIndex((s) => s.contextId === ctxId);
+              if (matchingIndex !== -1) {
+                matchingSong = songs[matchingIndex];
+              }
+            } else {
+              const trackIndexFromState =
+                playbackState.current_track?.track_index !== undefined
+                  ? playbackState.current_track!.track_index!
+                  : 0;
+
+              const trackInContext = ctx.tracks[trackIndexFromState];
+
+              if (trackInContext) {
+                matchingIndex = songs.findIndex(
+                  (s) => s.id === trackInContext.id && s.contextId === ctxId
+                );
+                if (matchingIndex !== -1) {
+                  matchingSong = songs[matchingIndex];
+                } else {
+                  // Fallback: compute start index of this context in flattened songs
+                  let startIdx = 0;
+                  for (let i = 0; i < queueIndex; i++) {
+                    startIdx += queueItems[i].tracks.length;
+                  }
+                  const possibleIndex = startIdx + trackIndexFromState;
+                  if (possibleIndex >= 0 && possibleIndex < songs.length) {
+                    if (songs[possibleIndex].contextId === ctxId) {
+                      matchingIndex = possibleIndex;
+                      matchingSong = songs[matchingIndex];
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // 2) If still not found, fall back to matching by current_track_id (track id)
+        if ((!matchingSong || matchingIndex === -1) && playbackState.current_track_id) {
           for (let i = 0; i < songs.length; i++) {
-            // Match by song.id which now contains the actual track ID
             if (songs[i].id === playbackState.current_track_id) {
               matchingSong = songs[i];
               matchingIndex = i;
               break;
             }
           }
-
-          if (matchingSong && matchingIndex !== -1) {
-            setCurrentSongIndex(matchingIndex);
-            setCurrentSong(matchingSong);
-
-            // ✅ CRITICAL: Set timeline to position_ms
-            const positionSeconds = playbackState.position_ms / 1000;
-            setCurrentTime(positionSeconds);
-            lastSyncTimeRef.current = positionSeconds;
-            playbackStartTimeRef.current = Date.now();
-
-            // Set playback status
-            setIsPlaying(playbackState.playback_status === "playing");
-            setVolume(playbackState.volume_level);
-            return;
-          }
         }
 
-        // Fallback: if current_track_id not found, start from beginning
+        if (matchingSong && matchingIndex !== -1) {
+          setCurrentSongIndex(matchingIndex);
+          setCurrentSong(matchingSong);
+
+          // Set timeline to position_ms from playback state
+          const positionSeconds = playbackState.position_ms / 1000;
+          setCurrentTime(positionSeconds);
+          lastSyncTimeRef.current = positionSeconds;
+          playbackStartTimeRef.current = Date.now();
+
+          // Set playback status and volume
+          setIsPlaying(playbackState.playback_status === "playing");
+          setVolume(playbackState.volume_level);
+          return;
+        }
+
+        // Final fallback: reset to first song
         setCurrentSongIndex(0);
         setCurrentSong(songs[0] || null);
         setCurrentTime(0);
@@ -490,7 +593,7 @@ const QueuePanel: React.FC = () => {
           setQueueItems(formattedQueueItems);
           setAllSongs(allSongsFlattened);
 
-          // ✅ Call playback state sync ONLY ONCE here during initial load
+          // Call playback state sync ONLY ONCE here during initial load
           await syncPlaybackStateWithQueue(allSongsFlattened, formattedQueueItems);
         } else {
           throw new Error("Invalid response format");
@@ -501,6 +604,8 @@ const QueuePanel: React.FC = () => {
         setAllSongs([]);
       } finally {
         setLoading(false);
+        // hide switching indicator after queue load completes (success or error)
+        setIsSwitchingGroup(false);
       }
     };
 
@@ -588,7 +693,7 @@ const QueuePanel: React.FC = () => {
     }
   };
 
-  // ✅ SIMPLIFIED: Just toggle play/pause without fetching state
+  // Simplified: Just toggle play/pause without fetching state
   const handlePlayPause = async () => {
     try {
       if (!groupId) return;
@@ -599,7 +704,6 @@ const QueuePanel: React.FC = () => {
         );
         setIsPlaying(false);
       } else {
-        // ✅ SIMPLIFIED: Just send play request, don't fetch state
         await axiosClient.post(
           `${API_URL}/api/v1/groups/${groupId}/playback/play`
         );
@@ -719,7 +823,7 @@ const QueuePanel: React.FC = () => {
     }
   };
 
-  // ✅ FIXED: Click to seek only (no drag)
+  // Click to seek only (no drag)
   const handleProgressClick = async (e: React.MouseEvent<HTMLDivElement>) => {
     try {
       if (!groupId || !currentSong) return;
@@ -736,7 +840,7 @@ const QueuePanel: React.FC = () => {
         { position_ms: newPositionMs }
       );
 
-      // ✅ Update timeline to the seeked position
+      // Update timeline to the seeked position
       const newTime = newPositionMs / 1000;
       setCurrentTime(newTime);
       lastSyncTimeRef.current = newTime;
@@ -769,34 +873,54 @@ const QueuePanel: React.FC = () => {
     try {
       if (!groupId) return;
 
-      let queuePosition = 0;
+      let queuePosition = -1;
       let trackIndex = 0;
       let foundContext = false;
 
-      for (let i = 0; i < queueItems.length; i++) {
-        const item = queueItems[i];
-
-        if (item.type === "track") {
-          if (item.tracks[0]?.id === song.id) {
-            queuePosition = i;
+      // 1) Prefer exact context match when we have song.contextId
+      if (song.contextId) {
+        queuePosition = queueItems.findIndex((q) => q.contextId === song.contextId);
+        if (queuePosition !== -1) {
+          const ctx = queueItems[queuePosition];
+          if (ctx.type === "track") {
             trackIndex = 0;
-            foundContext = true;
-            break;
+          } else {
+            // find the track index inside the matched context
+            const idxInCtx = ctx.tracks.findIndex((t) => t.id === song.id);
+            trackIndex = idxInCtx !== -1 ? idxInCtx : 0;
           }
+          foundContext = true;
         }
+      }
 
-        if (item.type === "playlist" || item.type === "album") {
-          const trackInContext = item.tracks.findIndex((t) => t.id === song.id);
-          if (trackInContext !== -1) {
-            queuePosition = i;
-            trackIndex = trackInContext;
-            foundContext = true;
-            break;
+      // 2) Fallback: if no contextId match, search by id across queue items (previous logic)
+      if (!foundContext) {
+        for (let i = 0; i < queueItems.length; i++) {
+          const item = queueItems[i];
+
+          if (item.type === "track") {
+            if (item.tracks[0]?.id === song.id) {
+              queuePosition = i;
+              trackIndex = 0;
+              foundContext = true;
+              break;
+            }
+          }
+
+          if (item.type === "playlist" || item.type === "album") {
+            const trackInContext = item.tracks.findIndex((t) => t.id === song.id);
+            if (trackInContext !== -1) {
+              queuePosition = i;
+              trackIndex = trackInContext;
+              foundContext = true;
+              break;
+            }
           }
         }
       }
 
-      if (!foundContext) {
+      if (!foundContext || queuePosition === -1) {
+        // nothing to play
         return;
       }
 
@@ -809,6 +933,7 @@ const QueuePanel: React.FC = () => {
       );
 
       if (response.data?.success) {
+        // index is the flattened allSongs index passed from QueueList
         setCurrentSongIndex(index);
         setCurrentSong(song);
         setCurrentTime(0);
@@ -892,7 +1017,7 @@ const QueuePanel: React.FC = () => {
         setSearchMusicTerm("");
         setSearchPlaylistTerm("");
 
-        // ✅ Sync playback after adding items to queue (ONCE)
+        // Sync playback after adding items to queue (ONCE)
         await syncPlaybackStateWithQueue(allSongsFlattened, formattedQueueItems);
       }
     } catch (err: any) {
@@ -959,7 +1084,7 @@ const QueuePanel: React.FC = () => {
             setQueueItems(formattedQueueItems);
             setAllSongs(allSongsFlattened);
 
-            // ✅ Sync playback after removing context (ONCE)
+            // Sync playback after removing context (ONCE)
             await syncPlaybackStateWithQueue(allSongsFlattened, formattedQueueItems);
           }
         }
@@ -981,6 +1106,7 @@ const QueuePanel: React.FC = () => {
     setShouldRefreshPlaylistTab(false);
   };
 
+  // UI render and passing a wrapper for onGroupSelect so QueuePanel persists selection whenever user changes it.
   if (loadingGroups) {
     return (
       <div
@@ -1033,122 +1159,122 @@ const QueuePanel: React.FC = () => {
     );
   }
 
-  if (allSongs.length === 0 || !currentSong) {
-    return (
-      <div
-        className="bg-white rounded-3xl shadow-xl p-4 flex flex-col w-full"
-        style={{ maxWidth: "400px", margin: "0 auto" }}
-      >
-        <GroupSelector
-          groups={groups}
-          selectedGroup={selectedGroup}
-          showGroupDropdown={showGroupDropdown}
-          onShowDropdownChange={setShowGroupDropdown}
-          onGroupSelect={setSelectedGroup}
-        />
-
-        <EmptyQueuePanel
-          onAddMusicClick={() => handleOpenAddPanel("music")}
-          onAddPlaylistClick={() => handleOpenAddPanel("playlist")}
-          groupName={selectedGroup?.group_name || "Group"}
-        />
-
-        <AddToQueuePanel
-          isOpen={showAddPanel}
-          activeTab={addPanelTab}
-          availableMusic={availableMusic}
-          availablePlaylists={availablePlaylists}
-          loadingMusic={loadingMusic}
-          loadingPlaylists={loadingPlaylists}
-          selectedMusicIds={selectedMusicIds}
-          selectedPlaylistIds={selectedPlaylistIds}
-          addingToQueue={addingToQueue}
-          searchMusicTerm={searchMusicTerm}
-          searchPlaylistTerm={searchPlaylistTerm}
-          onClose={handleCloseAddPanel}
-          onTabChange={handleAddPanelTabChange}
-          onSearchMusicChange={setSearchMusicTerm}
-          onSearchPlaylistChange={setSearchPlaylistTerm}
-          onToggleMusicSelection={toggleMusicSelection}
-          onTogglePlaylistSelection={togglePlaylistSelection}
-          onAddToQueue={handleAddToQueue}
-          formatDuration={formatDuration}
-        />
-      </div>
-    );
-  }
-
+  // Render main panel. When isSwitchingGroup is true, show a subtle overlay spinner while the new queue loads.
   return (
     <div
-      className="bg-white rounded-3xl shadow-xl p-4 flex flex-col w-full"
+      className="bg-white rounded-3xl shadow-xl p-4 flex flex-col w-full relative"
       style={{ maxWidth: "400px", margin: "0 auto" }}
     >
+      {/* Overlay shown when switching groups */}
+      {isSwitchingGroup && (
+        <div className="absolute inset-0 z-40 bg-white/60 flex items-center justify-center rounded-3xl">
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-8 h-8 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm text-gray-600">Switching group...</p>
+          </div>
+        </div>
+      )}
+
       <GroupSelector
         groups={groups}
         selectedGroup={selectedGroup}
         showGroupDropdown={showGroupDropdown}
         onShowDropdownChange={setShowGroupDropdown}
-        onGroupSelect={setSelectedGroup}
+        onGroupSelect={handleGroupSelect}
       />
 
-      <PlayerControls
-        currentSong={currentSong}
-        isPlaying={isPlaying}
-        currentTime={currentTime}
-        volume={volume}
-        isPreviousDisabled={isPreviousDisabled}
-        isNextDisabled={isNextDisabled}
-        isLoadingNavigation={isLoadingNavigation}
-        isPlaybackSeeking={isPlaybackSeeking}
-        onPlayPause={handlePlayPause}
-        onPrevious={handlePreviousSong}
-        onNext={handleNextSong}
-        onSkipBackward={handleSkipBackward}
-        onSkipForward={handleSkipForward}
-        onProgressClick={handleProgressClick}
-        onVolumeChange={handleVolumeChange}
-        onVolumeChangeEnd={handleVolumeChangeEnd}
-        onAddClick={handleOpenAddPanel}
-        formatDuration={formatDuration}
-        generatePlaceholderCover={generatePlaceholderCover}
-      />
+      {allSongs.length === 0 || !currentSong ? (
+        <>
+          <EmptyQueuePanel
+            onAddMusicClick={() => handleOpenAddPanel("music")}
+            onAddPlaylistClick={() => handleOpenAddPanel("playlist")}
+            groupName={selectedGroup?.group_name || "Group"}
+          />
 
-      <AddToQueuePanel
-        isOpen={showAddPanel}
-        activeTab={addPanelTab}
-        availableMusic={availableMusic}
-        availablePlaylists={availablePlaylists}
-        loadingMusic={loadingMusic}
-        loadingPlaylists={loadingPlaylists}
-        selectedMusicIds={selectedMusicIds}
-        selectedPlaylistIds={selectedPlaylistIds}
-        addingToQueue={addingToQueue}
-        searchMusicTerm={searchMusicTerm}
-        searchPlaylistTerm={searchPlaylistTerm}
-        onClose={handleCloseAddPanel}
-        onTabChange={handleAddPanelTabChange}
-        onSearchMusicChange={setSearchMusicTerm}
-        onSearchPlaylistChange={setSearchPlaylistTerm}
-        onToggleMusicSelection={toggleMusicSelection}
-        onTogglePlaylistSelection={togglePlaylistSelection}
-        onAddToQueue={handleAddToQueue}
-        formatDuration={formatDuration}
-      />
+          <AddToQueuePanel
+            isOpen={showAddPanel}
+            activeTab={addPanelTab}
+            availableMusic={availableMusic}
+            availablePlaylists={availablePlaylists}
+            loadingMusic={loadingMusic}
+            loadingPlaylists={loadingPlaylists}
+            selectedMusicIds={selectedMusicIds}
+            selectedPlaylistIds={selectedPlaylistIds}
+            addingToQueue={addingToQueue}
+            searchMusicTerm={searchMusicTerm}
+            searchPlaylistTerm={searchPlaylistTerm}
+            onClose={handleCloseAddPanel}
+            onTabChange={handleAddPanelTabChange}
+            onSearchMusicChange={setSearchMusicTerm}
+            onSearchPlaylistChange={setSearchPlaylistTerm}
+            onToggleMusicSelection={toggleMusicSelection}
+            onTogglePlaylistSelection={togglePlaylistSelection}
+            onAddToQueue={handleAddToQueue}
+            formatDuration={formatDuration}
+          />
+        </>
+      ) : (
+        <>
+          <PlayerControls
+            currentSong={currentSong}
+            isPlaying={isPlaying}
+            currentTime={currentTime}
+            volume={volume}
+            isPreviousDisabled={isPreviousDisabled}
+            isNextDisabled={isNextDisabled}
+            isLoadingNavigation={isLoadingNavigation}
+            isPlaybackSeeking={isPlaybackSeeking}
+            onPlayPause={handlePlayPause}
+            onPrevious={handlePreviousSong}
+            onNext={handleNextSong}
+            onSkipBackward={handleSkipBackward}
+            onSkipForward={handleSkipForward}
+            onProgressClick={handleProgressClick}
+            onVolumeChange={handleVolumeChange}
+            onVolumeChangeEnd={handleVolumeChangeEnd}
+            onAddClick={handleOpenAddPanel}
+            formatDuration={formatDuration}
+            generatePlaceholderCover={generatePlaceholderCover}
+          />
 
-      <QueueList
-        queueItems={queueItems}
-        allSongs={allSongs}
-        currentSongIndex={currentSongIndex}
-        isRemovingContextAtPosition={isRemovingContextAtPosition}
-        showClearConfirm={showClearConfirm}
-        isClearing={isClearing}
-        onSongClick={handleSongClick}
-        onRemoveContext={handleRemoveContextAtPosition}
-        onClearQueueClick={() => setShowClearConfirm(true)}
-        onClearConfirmClose={() => setShowClearConfirm(false)}
-        onClearQueueConfirm={handleClearQueue}
-        generatePlaceholderCover={generatePlaceholderCover}
-      />
+          <AddToQueuePanel
+            isOpen={showAddPanel}
+            activeTab={addPanelTab}
+            availableMusic={availableMusic}
+            availablePlaylists={availablePlaylists}
+            loadingMusic={loadingMusic}
+            loadingPlaylists={loadingPlaylists}
+            selectedMusicIds={selectedMusicIds}
+            selectedPlaylistIds={selectedPlaylistIds}
+            addingToQueue={addingToQueue}
+            searchMusicTerm={searchMusicTerm}
+            searchPlaylistTerm={searchPlaylistTerm}
+            onClose={handleCloseAddPanel}
+            onTabChange={handleAddPanelTabChange}
+            onSearchMusicChange={setSearchMusicTerm}
+            onSearchPlaylistChange={setSearchPlaylistTerm}
+            onToggleMusicSelection={toggleMusicSelection}
+            onTogglePlaylistSelection={togglePlaylistSelection}
+            onAddToQueue={handleAddToQueue}
+            formatDuration={formatDuration}
+          />
+
+          <QueueList
+            queueItems={queueItems}
+            allSongs={allSongs}
+            currentSongIndex={currentSongIndex}
+            isRemovingContextAtPosition={isRemovingContextAtPosition}
+            showClearConfirm={showClearConfirm}
+            isClearing={isClearing}
+            onSongClick={handleSongClick}
+            onRemoveContext={handleRemoveContextAtPosition}
+            onClearQueueClick={() => setShowClearConfirm(true)}
+            onClearConfirmClose={() => setShowClearConfirm(false)}
+            onClearQueueConfirm={handleClearQueue}
+            generatePlaceholderCover={generatePlaceholderCover}
+          />
+        </>
+      )}
     </div>
   );
 };

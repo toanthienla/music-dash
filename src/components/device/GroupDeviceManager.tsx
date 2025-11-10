@@ -76,6 +76,24 @@ type ApiMusicListResponse = {
   success: boolean;
 };
 
+type BatchResult = {
+  device_id: string;
+  success: boolean;
+  error?: string;
+};
+
+type ApiBatchResponse = {
+  code: number;
+  message: string;
+  data: {
+    total_requested: number;
+    successful: number;
+    failed: number;
+    results: BatchResult[];
+  };
+  success: boolean;
+};
+
 type ApiResponse<T> = {
   code: number;
   message: string;
@@ -109,13 +127,13 @@ export const GroupDeviceManager: React.FC<GroupDeviceManagerProps> = ({
   const [selectedDevices, setSelectedDevices] = useState<Set<string>>(new Set());
   const [isAddingDevices, setIsAddingDevices] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
-  const [addSuccess, setAddSuccess] = useState(false);
+  const [addSuccess, setAddSuccess] = useState<string | null>(null);
 
   // Remove device state
   const [selectedDevicesToRemove, setSelectedDevicesToRemove] = useState<Set<string>>(new Set());
   const [isRemovingDevices, setIsRemovingDevices] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
-  const [removeSuccess, setRemoveSuccess] = useState(false);
+  const [removeSuccess, setRemoveSuccess] = useState<string | null>(null);
 
   // Get available devices to add (not already in group)
   const getAvailableDevices = (): AvailableDevice[] => {
@@ -127,6 +145,7 @@ export const GroupDeviceManager: React.FC<GroupDeviceManagerProps> = ({
   useEffect(() => {
     fetchGroupDevices();
     fetchAvailableDevices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId]);
 
   /**
@@ -188,8 +207,6 @@ export const GroupDeviceManager: React.FC<GroupDeviceManagerProps> = ({
 
       const mappedDevices = mapApiDevicesToDevices(response.data.data || []);
       setDevices(mappedDevices);
-
-      console.log("[Group Devices] Fetched devices:", mappedDevices);
     } catch (err: any) {
       const errorMessage =
         err?.response?.data?.message ||
@@ -220,16 +237,7 @@ export const GroupDeviceManager: React.FC<GroupDeviceManagerProps> = ({
       const devicesList = response.data.data?.devices || [];
       const mappedAvailableDevices = mapApiAvailableDevices(devicesList);
       setAllAvailableDevices(mappedAvailableDevices);
-
-      console.log("[Available Devices] Fetched:", {
-        total: response.data.data?.total,
-        devices: mappedAvailableDevices,
-      });
     } catch (err: any) {
-      const errorMessage =
-        err?.response?.data?.message ||
-        err?.message ||
-        "Failed to fetch available devices";
       console.error("[Available Devices] Error:", err);
     } finally {
       setLoadingAvailableDevices(false);
@@ -263,7 +271,8 @@ export const GroupDeviceManager: React.FC<GroupDeviceManagerProps> = ({
   };
 
   /**
-   * Remove selected devices from group
+   * Remove selected devices from group (uses new batch endpoint)
+   * Handles batch response and displays per-device errors if present.
    */
   const handleRemoveSelectedDevices = async () => {
     if (selectedDevicesToRemove.size === 0) {
@@ -277,45 +286,52 @@ export const GroupDeviceManager: React.FC<GroupDeviceManagerProps> = ({
 
     setIsRemovingDevices(true);
     setRemoveError(null);
-    setRemoveSuccess(false);
+    setRemoveSuccess(null);
 
-    let successCount = 0;
-    let failureCount = 0;
+    const deviceIds = Array.from(selectedDevicesToRemove);
 
-    for (const deviceId of selectedDevicesToRemove) {
-      try {
-        const response = await axiosClient.delete<ApiResponse<any>>(
-          `${API_URL}/api/v1/groups/${groupId}/devices/${deviceId}`
-        );
-
-        if (response.data.success) {
-          successCount++;
-        } else {
-          failureCount++;
-        }
-      } catch (err: any) {
-        failureCount++;
-        console.error("[Remove Device] Error:", err);
-      }
-    }
-
-    setIsRemovingDevices(false);
-
-    if (failureCount === 0 && successCount > 0) {
-      setRemoveSuccess(true);
-      setSelectedDevicesToRemove(new Set());
-      setTimeout(() => {
-        fetchGroupDevices();
-        fetchAvailableDevices();
-        setRemoveSuccess(false);
-        if (onDeviceAdded) {
-          onDeviceAdded();
-        }
-      }, 1000);
-    } else if (failureCount > 0) {
-      setRemoveError(
-        `${failureCount} device${failureCount > 1 ? "s" : ""} failed to remove. ${successCount} removed successfully.`
+    try {
+      // axios delete with body: axios.delete(url, { data: payload })
+      const response = await axiosClient.delete<ApiBatchResponse>(
+        `${API_URL}/api/v1/groups/${groupId}/devices/batch`,
+        { data: { device_ids: deviceIds } }
       );
+
+      if (!response.data.success) {
+        throw new Error(response.data.message || "Failed to remove devices");
+      }
+
+      const batch = response.data.data;
+      // Build user-friendly messages
+      const failed = batch.results.filter((r) => !r.success);
+      const succeeded = batch.results.filter((r) => r.success);
+
+      if (failed.length > 0) {
+        const failedMsgs = failed.map((f) => `${f.device_id}: ${f.error || "failed"}`).join("; ");
+        setRemoveError(`Removed ${succeeded.length}. Failed ${failed.length}: ${failedMsgs}`);
+      } else {
+        setRemoveSuccess(`Removed ${succeeded.length} device${succeeded.length > 1 ? "s" : ""} successfully.`);
+      }
+
+      // refresh lists if any success
+      if (succeeded.length > 0) {
+        setSelectedDevicesToRemove(new Set());
+        setTimeout(() => {
+          fetchGroupDevices();
+          fetchAvailableDevices();
+          setRemoveSuccess(null);
+          if (onDeviceAdded) onDeviceAdded();
+        }, 900);
+      }
+    } catch (err: any) {
+      const errorMessage =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to remove devices";
+      setRemoveError(errorMessage);
+      console.error("[Remove Devices] Error:", err);
+    } finally {
+      setIsRemovingDevices(false);
     }
   };
 
@@ -347,7 +363,8 @@ export const GroupDeviceManager: React.FC<GroupDeviceManagerProps> = ({
   };
 
   /**
-   * Add selected devices to group
+   * Add selected devices to group (uses new batch endpoint)
+   * Handles partial successes and shows per-device errors returned by API.
    */
   const handleAddSelectedDevices = async () => {
     if (selectedDevices.size === 0) {
@@ -357,46 +374,54 @@ export const GroupDeviceManager: React.FC<GroupDeviceManagerProps> = ({
 
     setIsAddingDevices(true);
     setAddError(null);
-    setAddSuccess(false);
+    setAddSuccess(null);
 
-    let successCount = 0;
-    let failureCount = 0;
+    const deviceIds = Array.from(selectedDevices);
 
-    for (const deviceId of selectedDevices) {
-      try {
-        const response = await axiosClient.post<ApiResponse<any>>(
-          `${API_URL}/api/v1/groups/${groupId}/devices`,
-          { device_id: deviceId }
-        );
-
-        if (response.data.success) {
-          successCount++;
-        } else {
-          failureCount++;
-        }
-      } catch (err: any) {
-        failureCount++;
-        console.error("[Add Device] Error:", err);
-      }
-    }
-
-    setIsAddingDevices(false);
-
-    if (failureCount === 0 && successCount > 0) {
-      setAddSuccess(true);
-      setSelectedDevices(new Set());
-      setTimeout(() => {
-        fetchGroupDevices();
-        fetchAvailableDevices();
-        setAddSuccess(false);
-        if (onDeviceAdded) {
-          onDeviceAdded();
-        }
-      }, 1000);
-    } else if (failureCount > 0) {
-      setAddError(
-        `${failureCount} device${failureCount > 1 ? "s" : ""} failed to add. ${successCount} added successfully.`
+    try {
+      const response = await axiosClient.post<ApiBatchResponse>(
+        `${API_URL}/api/v1/groups/${groupId}/devices/batch`,
+        { device_ids: deviceIds }
       );
+
+      if (!response.data.success) {
+        throw new Error(response.data.message || "Failed to add devices");
+      }
+
+      const batch = response.data.data;
+      const failed = batch.results.filter((r) => !r.success);
+      const succeeded = batch.results.filter((r) => r.success);
+
+      if (failed.length > 0) {
+        // Map device id -> display name if available
+        const idToName = new Map(allAvailableDevices.map((d) => [d.id, d.name]));
+        const failedMsgs = failed
+          .map((f) => `${idToName.get(f.device_id) || f.device_id}: ${f.error || "failed"}`)
+          .join("; ");
+        setAddError(`Added ${succeeded.length}. Failed ${failed.length}: ${failedMsgs}`);
+      } else {
+        setAddSuccess(`Added ${succeeded.length} device${succeeded.length > 1 ? "s" : ""} successfully.`);
+      }
+
+      // refresh lists if any success
+      if (succeeded.length > 0) {
+        setSelectedDevices(new Set());
+        setTimeout(() => {
+          fetchGroupDevices();
+          fetchAvailableDevices();
+          setAddSuccess(null);
+          if (onDeviceAdded) onDeviceAdded();
+        }, 900);
+      }
+    } catch (err: any) {
+      const errorMessage =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to add devices";
+      setAddError(errorMessage);
+      console.error("[Add Devices] Error:", err);
+    } finally {
+      setIsAddingDevices(false);
     }
   };
 
@@ -626,7 +651,7 @@ export const GroupDeviceManager: React.FC<GroupDeviceManagerProps> = ({
                     strokeLinejoin="round"
                   />
                 </svg>
-                Devices removed successfully!
+                {removeSuccess}
               </div>
             )}
           </div>
@@ -816,7 +841,7 @@ export const GroupDeviceManager: React.FC<GroupDeviceManagerProps> = ({
                     strokeLinejoin="round"
                   />
                 </svg>
-                Devices added successfully!
+                {addSuccess}
               </div>
             )}
           </div>

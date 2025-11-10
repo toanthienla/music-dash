@@ -35,6 +35,24 @@ type ApiResponse<T> = {
   success: boolean;
 };
 
+type BatchResult = {
+  device_id: string;
+  success: boolean;
+  error?: string;
+};
+
+type ApiBatchResponse = {
+  code: number;
+  message: string;
+  data: {
+    total_requested: number;
+    successful: number;
+    failed: number;
+    results: BatchResult[];
+  };
+  success: boolean;
+};
+
 interface AddDeviceToGroupModalProps {
   open: boolean;
   groupId: string | null;
@@ -49,11 +67,10 @@ export const AddDeviceToGroupModal: React.FC<AddDeviceToGroupModalProps> = ({
   onSuccess,
 }) => {
   const [groupDevices, setGroupDevices] = useState<Device[]>([]);
-  const [allDevices, setAllDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
+  const [success, setSuccess] = useState<string | null>(null);
+  const [deviceIdsInput, setDeviceIdsInput] = useState<string>("");
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<"add" | "view">("view");
 
@@ -61,6 +78,7 @@ export const AddDeviceToGroupModal: React.FC<AddDeviceToGroupModalProps> = ({
     if (open && groupId) {
       fetchGroupDevices();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, groupId]);
 
   const fetchGroupDevices = async () => {
@@ -103,38 +121,68 @@ export const AddDeviceToGroupModal: React.FC<AddDeviceToGroupModalProps> = ({
     }
   };
 
+  /**
+   * New: Support adding multiple device IDs at once.
+   * The input accepts a single UUID or multiple UUIDs separated by commas, newlines or whitespace.
+   * We call the batch endpoint and present per-device results to the user.
+   */
   const handleAddDevice = async () => {
-    if (!groupId || !selectedDeviceId) {
-      setError("Please select a device");
+    if (!groupId) {
+      setError("Missing group id");
+      return;
+    }
+
+    // parse device ids from input
+    const raw = deviceIdsInput || "";
+    const ids = raw
+      .split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    if (ids.length === 0) {
+      setError("Please enter at least one device ID (comma/newline/space separated)");
       return;
     }
 
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
-      const response = await axiosClient.post<ApiResponse<any>>(
-        `${API_URL}/api/v1/groups/${groupId}/devices`,
-        { device_id: selectedDeviceId }
+      // Call the new batch endpoint
+      const response = await axiosClient.post<ApiBatchResponse>(
+        `${API_URL}/api/v1/groups/${groupId}/devices/batch`,
+        { device_ids: ids }
       );
 
       if (!response.data.success) {
-        throw new Error(response.data.message || "Failed to add device");
+        throw new Error(response.data.message || "Failed to add devices");
       }
 
-      setSuccess(true);
-      setSelectedDeviceId("");
-      setSearch("");
+      const batch = response.data.data;
+      const failed = batch.results.filter((r) => !r.success);
+      const succeeded = batch.results.filter((r) => r.success);
 
-      setTimeout(() => {
-        fetchGroupDevices();
-        setSuccess(false);
-        setActiveTab("view");
-        onSuccess?.();
-      }, 1500);
+      if (failed.length > 0) {
+        const failedMsgs = failed.map((f) => `${f.device_id}: ${f.error || "failed"}`).join("; ");
+        setError(`Added ${succeeded.length}. Failed ${failed.length}: ${failedMsgs}`);
+      } else {
+        setSuccess(`Added ${succeeded.length} device${succeeded.length > 1 ? "s" : ""} successfully.`);
+        setDeviceIdsInput("");
+      }
+
+      // refresh if any success
+      if (succeeded.length > 0) {
+        setTimeout(() => {
+          fetchGroupDevices();
+          setSuccess(null);
+          onSuccess?.();
+          setActiveTab("view");
+        }, 1000);
+      }
     } catch (err: any) {
       const errorMessage =
-        err?.response?.data?.message || err?.message || "Failed to add device";
+        err?.response?.data?.message || err?.message || "Failed to add device(s)";
       setError(errorMessage);
       console.error("[Add Device] Error:", err);
     } finally {
@@ -151,6 +199,7 @@ export const AddDeviceToGroupModal: React.FC<AddDeviceToGroupModalProps> = ({
 
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
       const response = await axiosClient.delete<ApiResponse<any>>(
@@ -161,10 +210,10 @@ export const AddDeviceToGroupModal: React.FC<AddDeviceToGroupModalProps> = ({
         throw new Error(response.data.message || "Failed to remove device");
       }
 
-      setSuccess(true);
+      setSuccess("Device removed successfully");
       setTimeout(() => {
         fetchGroupDevices();
-        setSuccess(false);
+        setSuccess(null);
         onSuccess?.();
       }, 1500);
     } catch (err: any) {
@@ -270,7 +319,7 @@ export const AddDeviceToGroupModal: React.FC<AddDeviceToGroupModalProps> = ({
                 strokeLinejoin="round"
               />
             </svg>
-            {activeTab === "add" ? "Device added successfully!" : "Device removed successfully!"}
+            {success}
           </div>
         )}
 
@@ -436,50 +485,26 @@ export const AddDeviceToGroupModal: React.FC<AddDeviceToGroupModalProps> = ({
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Select Device
+                Device ID(s)
               </label>
               <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-                Choose a device to add to this group
+                Paste one or more device UUIDs (separated by commas, spaces or newlines). We will call the batch add endpoint.
               </p>
 
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {loading ? (
-                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                    Loading available devices…
-                  </div>
-                ) : (
-                  <div className="grid gap-2">
-                    {/* Note: In production, fetch available devices from /api/v1/devices */}
-                    <div className="p-4 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center text-gray-500 dark:text-gray-400 text-sm">
-                      Please implement the available devices endpoint
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Simple Device ID Input */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Device ID
-              </label>
-              <input
-                type="text"
-                value={selectedDeviceId}
-                onChange={(e) => setSelectedDeviceId(e.target.value)}
-                placeholder="Paste device ID here"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-gray-800 dark:text-white text-sm"
+              <textarea
+                value={deviceIdsInput}
+                onChange={(e) => setDeviceIdsInput(e.target.value)}
+                placeholder="550e8400-e29b-41d4-a716-446655440000
+550e8400-e29b-41d4-a716-446655440001"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-gray-800 dark:text-white text-sm min-h-[120px]"
               />
-              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                Enter the UUID of the device you want to add
-              </p>
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
               <button
                 onClick={() => {
                   setActiveTab("view");
-                  setSelectedDeviceId("");
+                  setDeviceIdsInput("");
                   setError(null);
                 }}
                 className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -489,10 +514,10 @@ export const AddDeviceToGroupModal: React.FC<AddDeviceToGroupModalProps> = ({
               </button>
               <button
                 onClick={handleAddDevice}
-                disabled={loading || !selectedDeviceId}
+                disabled={loading || !deviceIdsInput.trim()}
                 className="px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loading ? "Adding..." : "Add Device"}
+                {loading ? "Adding..." : "Add Device(s)"}
               </button>
             </div>
           </div>

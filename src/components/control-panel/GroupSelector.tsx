@@ -79,6 +79,13 @@ const GroupSelector: React.FC<GroupSelectorProps> = ({
             <button
               key={group.id}
               onClick={() => {
+                // persist selected group id in localStorage so the selection survives reloads
+                try {
+                  localStorage.setItem("selectedGroupId", group.id);
+                } catch (e) {
+                  // ignore localStorage errors (e.g., private mode)
+                }
+
                 onGroupSelect(group);
                 onShowDropdownChange(false);
               }}
