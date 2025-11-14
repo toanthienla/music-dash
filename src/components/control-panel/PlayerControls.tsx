@@ -67,24 +67,22 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   generatePlaceholderCover,
 }) => {
   const [showVolumePanel, setShowVolumePanel] = useState<boolean>(false);
-  const [displayTime, setDisplayTime] = useState<number>(currentTime);
   const volumeButtonRef = useRef<HTMLDivElement | null>(null);
   const volumeSliderRef = useRef<HTMLInputElement | null>(null);
   const progressBarRef = useRef<HTMLDivElement | null>(null);
 
-  // ✅ FIXED: Sync displayTime with currentTime
-  useEffect(() => {
-    setDisplayTime(currentTime);
-  }, [currentTime]);
-
+  // Progress is now fully controlled from parent via currentTime
   const progressPercentage = currentSong
-    ? (displayTime / currentSong.durationSeconds) * 100
+    ? (currentTime / currentSong.durationSeconds) * 100
     : 0;
 
   // Close volume panel when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (volumeButtonRef.current && !volumeButtonRef.current.contains(event.target as Node)) {
+      if (
+        volumeButtonRef.current &&
+        !volumeButtonRef.current.contains(event.target as Node)
+      ) {
         setShowVolumePanel(false);
       }
     };
@@ -101,11 +99,13 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   const handleProgressBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressBarRef.current) return;
 
+    // We still compute position here, but the actual time update
+    // is handled by the parent via onProgressClick (which sends
+    // the seek request and updates currentTime).
     const rect = progressBarRef.current.getBoundingClientRect();
     const percent = (e.clientX - rect.left) / rect.width;
-    const newTime = percent * currentSong.durationSeconds;
+    const _newTime = percent * currentSong.durationSeconds;
 
-    setDisplayTime(Math.max(0, Math.min(newTime, currentSong.durationSeconds)));
     onProgressClick(e);
   };
 
@@ -160,7 +160,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
 
         {/* Time display */}
         <div className="flex justify-between text-xs text-gray-500 mt-1 font-medium">
-          <span>{formatDuration(displayTime * 1000)}</span>
+          <span>{formatDuration(currentTime * 1000)}</span>
           <span>{currentSong.duration}</span>
         </div>
       </div>

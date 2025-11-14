@@ -166,7 +166,9 @@ const formatDuration = (milliseconds: number): string => {
   const secs = totalSeconds % 60;
 
   if (hours > 0) {
-    return `${hours}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    return `${hours}:${mins.toString().padStart(2, "0")}:${secs
+      .toString()
+      .padStart(2, "0")}`;
   }
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 };
@@ -234,17 +236,22 @@ const QueuePanel: React.FC = () => {
   const [loadingMusic, setLoadingMusic] = useState<boolean>(false);
   const [loadingPlaylists, setLoadingPlaylists] = useState<boolean>(false);
   const [selectedMusicIds, setSelectedMusicIds] = useState<Set<string>>(new Set());
-  const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<Set<string>>(new Set());
+  const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<Set<string>>(
+    new Set()
+  );
   const [addingToQueue, setAddingToQueue] = useState<boolean>(false);
   const [searchMusicTerm, setSearchMusicTerm] = useState<string>("");
   const [searchPlaylistTerm, setSearchPlaylistTerm] = useState<string>("");
   const [isClearing, setIsClearing] = useState<boolean>(false);
-  const [isRemovingContextAtPosition, setIsRemovingContextAtPosition] = useState<number | null>(null);
+  const [isRemovingContextAtPosition, setIsRemovingContextAtPosition] =
+    useState<number | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
   const [isPlaybackSeeking, setIsPlaybackSeeking] = useState<boolean>(false);
   const [volume, setVolume] = useState<number>(60);
-  const [shouldRefreshMusicTab, setShouldRefreshMusicTab] = useState<boolean>(false);
-  const [shouldRefreshPlaylistTab, setShouldRefreshPlaylistTab] = useState<boolean>(false);
+  const [shouldRefreshMusicTab, setShouldRefreshMusicTab] =
+    useState<boolean>(false);
+  const [shouldRefreshPlaylistTab, setShouldRefreshPlaylistTab] =
+    useState<boolean>(false);
 
   // New: indicate UI is switching groups and loading the queue
   const [isSwitchingGroup, setIsSwitchingGroup] = useState<boolean>(false);
@@ -259,7 +266,8 @@ const QueuePanel: React.FC = () => {
   const groupId = selectedGroup?.id || "";
 
   const isPreviousDisabled = currentSongIndex === 0 || allSongs.length === 0;
-  const isNextDisabled = currentSongIndex === allSongs.length - 1 || allSongs.length === 0;
+  const isNextDisabled =
+    currentSongIndex === allSongs.length - 1 || allSongs.length === 0;
 
   // Wrapper to handle group selection from UI: persist, set state, show switching UI only when changing group
   const handleGroupSelect = (g: Group) => {
@@ -353,9 +361,10 @@ const QueuePanel: React.FC = () => {
     playbackStartTimeRef.current = Date.now();
 
     progressIntervalRef.current = setInterval(() => {
-      setCurrentTime((prevTime) => {
+      setCurrentTime(() => {
         // Calculate elapsed time since this interval started
-        const elapsedSeconds = (Date.now() - playbackStartTimeRef.current) / 1000;
+        const elapsedSeconds =
+          (Date.now() - playbackStartTimeRef.current) / 1000;
 
         // Add elapsed time to the last synced position
         const newTime = lastSyncTimeRef.current + elapsedSeconds;
@@ -468,7 +477,10 @@ const QueuePanel: React.FC = () => {
   };
 
   // Prefer matching by current_context.id first, then fall back to current_track_id
-  const syncPlaybackStateWithQueue = async (songs: Song[], queueItems: QueueItem[]) => {
+  const syncPlaybackStateWithQueue = async (
+    songs: Song[],
+    queueItems: QueueItem[]
+  ) => {
     if (!groupId || songs.length === 0) {
       setCurrentSongIndex(0);
       setCurrentSong(songs[0] || null);
@@ -504,6 +516,7 @@ const QueuePanel: React.FC = () => {
                 matchingSong = songs[matchingIndex];
               }
             } else {
+              // context is playlist or album
               const trackIndexFromState =
                 playbackState.current_track?.track_index !== undefined
                   ? playbackState.current_track!.track_index!
@@ -596,7 +609,8 @@ const QueuePanel: React.FC = () => {
 
         if (queueResponse.data?.success && queueResponse.data?.data) {
           const queueData: QueueResponse = queueResponse.data.data;
-          const { formattedQueueItems, allSongsFlattened } = formatQueueData(queueData);
+          const { formattedQueueItems, allSongsFlattened } =
+            formatQueueData(queueData);
 
           setQueueItems(formattedQueueItems);
           setAllSongs(allSongsFlattened);
@@ -678,7 +692,12 @@ const QueuePanel: React.FC = () => {
       fetchAvailablePlaylists();
       setShouldRefreshPlaylistTab(false);
     }
-  }, [showAddPanel, addPanelTab, shouldRefreshPlaylistTab, fetchAvailablePlaylists]);
+  }, [
+    showAddPanel,
+    addPanelTab,
+    shouldRefreshPlaylistTab,
+    fetchAvailablePlaylists,
+  ]);
 
   const handleOpenAddPanel = (tab: "music" | "playlist") => {
     setShowAddPanel(true);
@@ -716,6 +735,9 @@ const QueuePanel: React.FC = () => {
           `${API_URL}/api/v1/groups/${groupId}/playback/play`
         );
         setIsPlaying(true);
+        // when resuming, reset timing reference so interval continues from currentTime
+        lastSyncTimeRef.current = currentTime;
+        playbackStartTimeRef.current = Date.now();
       }
     } catch (err: any) {
       // Error handled silently
@@ -785,10 +807,9 @@ const QueuePanel: React.FC = () => {
   const handleSkipBackward = async () => {
     try {
       if (!groupId) return;
+      if (!currentSong) return;
 
       setIsPlaybackSeeking(true);
-
-      if (!currentSong) return;
 
       await axiosClient.post(
         `${API_URL}/api/v1/groups/${groupId}/playback/seek-relative`,
@@ -809,12 +830,14 @@ const QueuePanel: React.FC = () => {
   const handleSkipForward = async () => {
     try {
       if (!groupId) return;
+      if (!currentSong) return;
 
       setIsPlaybackSeeking(true);
 
-      if (!currentSong) return;
-
-      const newPositionSeconds = Math.min(currentSong.durationSeconds, currentTime + 10);
+      const newPositionSeconds = Math.min(
+        currentSong.durationSeconds,
+        currentTime + 10
+      );
 
       await axiosClient.post(
         `${API_URL}/api/v1/groups/${groupId}/playback/seek-relative`,
@@ -840,7 +863,9 @@ const QueuePanel: React.FC = () => {
 
       const rect = e.currentTarget.getBoundingClientRect();
       const percent = (e.clientX - rect.left) / rect.width;
-      const newPositionMs = Math.round(percent * currentSong.durationSeconds * 1000);
+      const newPositionMs = Math.round(
+        percent * currentSong.durationSeconds * 1000
+      );
 
       // Send seek request
       await axiosClient.post(
@@ -887,7 +912,9 @@ const QueuePanel: React.FC = () => {
 
       // 1) Prefer exact context match when we have song.contextId
       if (song.contextId) {
-        queuePosition = queueItems.findIndex((q) => q.contextId === song.contextId);
+        queuePosition = queueItems.findIndex(
+          (q) => q.contextId === song.contextId
+        );
         if (queuePosition !== -1) {
           const ctx = queueItems[queuePosition];
           if (ctx.type === "track") {
@@ -976,7 +1003,11 @@ const QueuePanel: React.FC = () => {
 
   const handleAddToQueue = async () => {
     try {
-      if (!groupId || (selectedMusicIds.size === 0 && selectedPlaylistIds.size === 0)) return;
+      if (
+        !groupId ||
+        (selectedMusicIds.size === 0 && selectedPlaylistIds.size === 0)
+      )
+        return;
       setAddingToQueue(true);
 
       if (selectedMusicIds.size > 0) {
@@ -1015,7 +1046,8 @@ const QueuePanel: React.FC = () => {
 
       if (queueResponse.data?.success && queueResponse.data?.data) {
         const queueData: QueueResponse = queueResponse.data.data;
-        const { formattedQueueItems, allSongsFlattened } = formatQueueData(queueData);
+        const { formattedQueueItems, allSongsFlattened } =
+          formatQueueData(queueData);
 
         setQueueItems(formattedQueueItems);
         setAllSongs(allSongsFlattened);
@@ -1087,13 +1119,17 @@ const QueuePanel: React.FC = () => {
 
           if (queueResponse.data?.success && queueResponse.data?.data) {
             const queueData: QueueResponse = queueResponse.data.data;
-            const { formattedQueueItems, allSongsFlattened } = formatQueueData(queueData);
+            const { formattedQueueItems, allSongsFlattened } =
+              formatQueueData(queueData);
 
             setQueueItems(formattedQueueItems);
             setAllSongs(allSongsFlattened);
 
             // Sync playback after removing context (ONCE)
-            await syncPlaybackStateWithQueue(allSongsFlattened, formattedQueueItems);
+            await syncPlaybackStateWithQueue(
+              allSongsFlattened,
+              formattedQueueItems
+            );
           }
         }
       }
