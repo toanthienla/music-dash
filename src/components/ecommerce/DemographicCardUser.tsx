@@ -48,6 +48,9 @@ interface ApiResponse<T> {
   success: boolean;
 }
 
+// Synthetic id for "All devices"
+const ALL_DEVICES_ID = "__all__";
+
 // ===== Helper Functions =====
 
 /**
@@ -80,9 +83,10 @@ const mapApiDevicesToTableDevices = (apiDevices: ApiDeviceData[]): Device[] => {
       type: deviceData.type || "N/A",
       macAddress: deviceData.mac_address || "N/A",
       status: deviceData.status || "unknown",
-      volume: typeof deviceData.volume === "number"
-        ? Math.min(100, Math.max(0, deviceData.volume))
-        : 0,
+      volume:
+        typeof deviceData.volume === "number"
+          ? Math.min(100, Math.max(0, deviceData.volume))
+          : 0,
       muted: Boolean(deviceData.muted),
       enabled: deviceData.status === "online",
       lastHeartbeat: deviceData.last_heartbeat || "N/A",
@@ -107,12 +111,15 @@ export default function DemographicCard() {
   const devicesPerPage = 5;
 
   // localStorage key for persistence
-  const STORAGE_KEY = "selectedGroupId";
+  const STORAGE_KEY = "selectedGroupIdMap";
 
   // ===== Close Dropdown on Outside Click =====
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setShowGroupDropdown(false);
       }
     };
@@ -153,7 +160,10 @@ export default function DemographicCard() {
           return;
         }
 
-        console.log(`[DemographicCard] Fetched ${groupsList.length} groups`, groupsList);
+        console.log(
+          `[DemographicCard] Fetched ${groupsList.length} groups`,
+          groupsList
+        );
         setGroups(groupsList);
 
         // Try to restore previously selected group from localStorage
@@ -164,12 +174,18 @@ export default function DemographicCard() {
           restoredId = null;
         }
 
-        // If saved id exists and matches a fetched group, use it; otherwise use first group and persist it
+        // Allow restoring ALL_DEVICES_ID too
+        if (restoredId === ALL_DEVICES_ID) {
+          setSelectedGroup(ALL_DEVICES_ID);
+          setLoadingGroups(false);
+          return;
+        }
+
+        // If saved id exists and matches a fetched group, use it; otherwise default to "All devices"
         if (restoredId) {
           const matched = groupsList.find((g) => g.id === restoredId);
           if (matched) {
             setSelectedGroup(matched.id);
-            // ensure persisted value is consistent (write again is harmless)
             try {
               localStorage.setItem(STORAGE_KEY, matched.id);
             } catch (e) {
@@ -180,14 +196,12 @@ export default function DemographicCard() {
           }
         }
 
-        // fallback: default to first group and persist to localStorage
-        if (groupsList.length > 0) {
-          setSelectedGroup(groupsList[0].id);
-          try {
-            localStorage.setItem(STORAGE_KEY, groupsList[0].id);
-          } catch (e) {
-            // ignore localStorage errors
-          }
+        // fallback: default to "All devices" and persist
+        setSelectedGroup(ALL_DEVICES_ID);
+        try {
+          localStorage.setItem(STORAGE_KEY, ALL_DEVICES_ID);
+        } catch (e) {
+          // ignore localStorage errors
         }
       } catch (err: any) {
         const errorMessage =
@@ -195,7 +209,11 @@ export default function DemographicCard() {
           err?.message ||
           "Failed to fetch groups";
 
-        console.error("[DemographicCard] Error fetching groups:", errorMessage, err);
+        console.error(
+          "[DemographicCard] Error fetching groups:",
+          errorMessage,
+          err
+        );
         setGroups([]);
         setError(errorMessage);
       } finally {
@@ -206,42 +224,69 @@ export default function DemographicCard() {
     fetchGroups();
   }, []);
 
-  // ===== Fetch Devices from Selected Group =====
+  // ===== Fetch Devices (group or all) =====
   useEffect(() => {
     if (!selectedGroup) {
       setDevices([]);
       return;
     }
 
+    const fetchDevicesForGroup = async (
+      groupId: string
+    ): Promise<ApiDeviceData[]> => {
+      const endpoint = `${API_URL}/api/v1/groups/${groupId}/devices`;
+      console.log(`[DemographicCard] Fetching devices from: ${endpoint}`);
+      const res = await axiosClient.get<ApiResponse<ApiDeviceData[]>>(
+        endpoint
+      );
+      if (!res.data.success) {
+        throw new Error(res.data.message || "Failed to fetch devices");
+      }
+      const rawDevices = res.data?.data || [];
+      if (!Array.isArray(rawDevices)) {
+        throw new Error("Invalid API response format: data is not an array");
+      }
+      console.log(
+        `[DemographicCard] Fetched ${rawDevices.length} devices for group ${groupId}`
+      );
+      return rawDevices;
+    };
+
     const fetchDevices = async () => {
       setLoadingDevices(true);
       setError(null);
       try {
-        const endpoint = `${API_URL}/api/v1/groups/${selectedGroup}/devices`;
+        let allDevicesRaw: ApiDeviceData[] = [];
 
-        console.log(`[DemographicCard] Fetching devices from: ${endpoint}`);
+        if (selectedGroup === ALL_DEVICES_ID) {
+          // Fetch devices for all groups in parallel
+          const groupIds = groups.map((g) => g.id);
+          const promises = groupIds.map((id) =>
+            fetchDevicesForGroup(id).catch((err) => {
+              console.error(
+                `[DemographicCard] Error fetching devices for group ${id}:`,
+                err
+              );
+              return [] as ApiDeviceData[];
+            })
+          );
+          const results = await Promise.all(promises);
+          allDevicesRaw = results.flat();
 
-        const res = await axiosClient.get<ApiResponse<ApiDeviceData[]>>(
-          endpoint
-        );
-
-        console.log("[DemographicCard] Devices API Response:", res.data);
-
-        if (!res.data.success) {
-          throw new Error(res.data.message || "Failed to fetch devices");
+          // De-duplicate by id in case a device belongs to multiple groups
+          const seen = new Map<string, ApiDeviceData>();
+          allDevicesRaw.forEach((d) => {
+            if (!seen.has(d.id)) {
+              seen.set(d.id, d);
+            }
+          });
+          allDevicesRaw = Array.from(seen.values());
+        } else {
+          // Single group
+          allDevicesRaw = await fetchDevicesForGroup(selectedGroup);
         }
 
-        const rawDevices = res.data?.data || [];
-
-        if (!Array.isArray(rawDevices)) {
-          throw new Error("Invalid API response format: data is not an array");
-        }
-
-        console.log(
-          `[DemographicCard] Fetched ${rawDevices.length} devices`
-        );
-
-        const mappedDevices = mapApiDevicesToTableDevices(rawDevices);
+        const mappedDevices = mapApiDevicesToTableDevices(allDevicesRaw);
         setDevices(mappedDevices);
         setCurrentPage(1);
       } catch (err: any) {
@@ -259,7 +304,7 @@ export default function DemographicCard() {
     };
 
     fetchDevices();
-  }, [selectedGroup]);
+  }, [selectedGroup, groups]);
 
   // ===== Filter Devices =====
   const filteredDevices = devices.filter((device) => {
@@ -274,7 +319,10 @@ export default function DemographicCard() {
   });
 
   // ===== Pagination =====
-  const totalPages = Math.max(1, Math.ceil(filteredDevices.length / devicesPerPage));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredDevices.length / devicesPerPage)
+  );
   const startIndex = (currentPage - 1) * devicesPerPage;
   const paginatedDevices = filteredDevices.slice(
     startIndex,
@@ -288,7 +336,6 @@ export default function DemographicCard() {
   };
 
   const handleGroupSelect = (groupId: string) => {
-    // persist selection
     try {
       localStorage.setItem(STORAGE_KEY, groupId);
     } catch (e) {
@@ -299,8 +346,25 @@ export default function DemographicCard() {
     setShowGroupDropdown(false);
   };
 
-  const currentGroupName = groups.find((g) => g.id === selectedGroup)?.group_name || "Select Group";
-  const currentGroupDeviceCount = groups.find((g) => g.id === selectedGroup)?.device_count || 0;
+  const currentGroup =
+    selectedGroup === ALL_DEVICES_ID
+      ? null
+      : groups.find((g) => g.id === selectedGroup);
+
+  const currentGroupName =
+    selectedGroup === ALL_DEVICES_ID
+      ? "All devices"
+      : currentGroup?.group_name || "Select Group";
+
+  const totalDevicesFromGroups = groups.reduce(
+    (sum, g) => sum + (g.device_count || 0),
+    0
+  );
+
+  const currentGroupDeviceCount =
+    selectedGroup === ALL_DEVICES_ID
+      ? totalDevicesFromGroups
+      : currentGroup?.device_count || 0;
 
   // ===== Render =====
   if (loadingGroups) {
@@ -318,7 +382,9 @@ export default function DemographicCard() {
       <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
-            <p className="text-gray-500 dark:text-gray-400 mb-4">No groups available</p>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">
+              No groups available
+            </p>
             <button
               onClick={() => window.location.reload()}
               className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
@@ -382,6 +448,22 @@ export default function DemographicCard() {
 
           {showGroupDropdown && (
             <div className="absolute top-full right-0 left-0 mt-1 bg-white border border-gray-300 rounded shadow z-50 max-h-48 overflow-y-auto dark:bg-gray-800 dark:border-gray-700">
+              {/* All devices option */}
+              <button
+                onClick={() => handleGroupSelect(ALL_DEVICES_ID)}
+                className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${selectedGroup === ALL_DEVICES_ID
+                  ? "font-medium bg-gray-50 dark:bg-gray-700"
+                  : ""
+                  }`}
+              >
+                <p className="text-gray-800 dark:text-gray-200">All devices</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {totalDevicesFromGroups} device(s)
+                </p>
+              </button>
+
+              <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
+
               {groups.map((group) => (
                 <button
                   key={group.id}
@@ -391,7 +473,9 @@ export default function DemographicCard() {
                     : ""
                     }`}
                 >
-                  <p className="text-gray-800 dark:text-gray-200">{group.group_name}</p>
+                  <p className="text-gray-800 dark:text-gray-200">
+                    {group.group_name}
+                  </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     {group.device_count || 0} device(s)
                   </p>
