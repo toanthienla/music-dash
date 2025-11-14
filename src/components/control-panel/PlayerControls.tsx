@@ -281,4 +281,4 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   );
 };
 
-export default PlayerControls;
+export default PlayerControls;  

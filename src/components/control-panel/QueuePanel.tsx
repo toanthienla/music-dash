@@ -1150,6 +1150,138 @@ const QueuePanel: React.FC = () => {
     setShouldRefreshPlaylistTab(false);
   };
 
+  /**
+   * NEW: when current track ends, and if not last track in queue,
+   * call playback/state to sync to the new track.
+   */
+  const handleTrackEnded = useCallback(async () => {
+    if (!groupId) return;
+
+    // If it's already the last track, stop and do nothing
+    if (currentSongIndex >= allSongs.length - 1) {
+      setIsPlaying(false);
+      return;
+    }
+
+    try {
+      const playbackResponse = await axiosClient.get(
+        `${API_URL}/api/v1/groups/${groupId}/playback/state`
+      );
+
+      if (!playbackResponse.data?.success || !playbackResponse.data?.data) {
+        // Fallback: local advance
+        const nextIndex = currentSongIndex + 1;
+        if (nextIndex < allSongs.length) {
+          setCurrentSongIndex(nextIndex);
+          setCurrentSong(allSongs[nextIndex]);
+          setCurrentTime(0);
+          lastSyncTimeRef.current = 0;
+          playbackStartTimeRef.current = Date.now();
+          setIsPlaying(true);
+        } else {
+          setIsPlaying(false);
+        }
+        return;
+      }
+
+      const playbackState: PlaybackState = playbackResponse.data.data;
+
+      let nextIndex = -1;
+      let nextSong: Song | undefined;
+
+      // Prefer track id
+      if (playbackState.current_track_id) {
+        nextIndex = allSongs.findIndex(
+          (s) => s.id === playbackState.current_track_id
+        );
+        if (nextIndex !== -1) {
+          nextSong = allSongs[nextIndex];
+        }
+      }
+
+      // If not found, try by context + track_index
+      if ((!nextSong || nextIndex === -1) && playbackState.current_context?.id) {
+        const ctxId = playbackState.current_context.id;
+
+        let flattenedIndex = 0;
+        for (const item of queueItems) {
+          if (item.contextId === ctxId) {
+            const ti =
+              playbackState.current_track?.track_index !== undefined
+                ? playbackState.current_track.track_index
+                : 0;
+
+            if (ti >= 0 && ti < item.tracks.length) {
+              nextSong = item.tracks[ti];
+              nextIndex = flattenedIndex + ti;
+            }
+            break;
+          }
+          flattenedIndex += item.tracks.length;
+        }
+      }
+
+      if (nextSong && nextIndex !== -1) {
+        setCurrentSongIndex(nextIndex);
+        setCurrentSong(nextSong);
+
+        const positionSeconds = playbackState.position_ms / 1000;
+        setCurrentTime(positionSeconds);
+        lastSyncTimeRef.current = positionSeconds;
+        playbackStartTimeRef.current = Date.now();
+        setIsPlaying(playbackState.playback_status === "playing");
+      } else {
+        // Fallback: local next
+        const fallbackIndex = currentSongIndex + 1;
+        if (fallbackIndex < allSongs.length) {
+          setCurrentSongIndex(fallbackIndex);
+          setCurrentSong(allSongs[fallbackIndex]);
+          setCurrentTime(0);
+          lastSyncTimeRef.current = 0;
+          playbackStartTimeRef.current = Date.now();
+          setIsPlaying(true);
+        } else {
+          setIsPlaying(false);
+        }
+      }
+    } catch (err) {
+      // On error, fallback to local next
+      const nextIndex = currentSongIndex + 1;
+      if (nextIndex < allSongs.length) {
+        setCurrentSongIndex(nextIndex);
+        setCurrentSong(allSongs[nextIndex]);
+        setCurrentTime(0);
+        lastSyncTimeRef.current = 0;
+        playbackStartTimeRef.current = Date.now();
+        setIsPlaying(true);
+      } else {
+        setIsPlaying(false);
+      }
+    }
+  }, [groupId, currentSongIndex, allSongs, queueItems]);
+
+  /**
+   * Effect: detect when track is ended.
+   * If not last track, call handleTrackEnded (which uses playback/state).
+   */
+  useEffect(() => {
+    if (!currentSong || allSongs.length === 0) return;
+
+    // When we reach or exceed duration, we consider the track ended.
+    if (currentTime >= currentSong.durationSeconds) {
+      // Avoid hammering: only react if we were actually playing
+      if (!isPlaying) return;
+
+      void handleTrackEnded();
+    }
+  }, [
+    currentTime,
+    currentSong,
+    allSongs.length,
+    handleTrackEnded,
+    isPlaying,
+  ]);
+
   // UI render and passing a wrapper for onGroupSelect so QueuePanel persists selection whenever user changes it.
   if (loadingGroups) {
     return (
