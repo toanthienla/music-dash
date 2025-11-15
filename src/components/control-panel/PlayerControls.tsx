@@ -221,7 +221,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
       {/* --- Extra Controls --- */}
       <div className="grid grid-cols-4 gap-2 mt-6 mb-4 items-center justify-items-center">
         <button
-          className="hover:opacity-70 transition-opacity cursor-not-allowed"
+          className="hover:opacity-70 transition-opacity"
           aria-label="Speed"
           disabled
         >
@@ -229,7 +229,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
         </button>
 
         <button
-          className="hover:opacity-70 transition-opacity cursor-not-allowed"
+          className="hover:opacity-70 transition-opacity"
           aria-label="Sleep timer"
           disabled
         >

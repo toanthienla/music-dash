@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useEffect, useState, useRef } from "react";
 import axiosClient from "@/utils/axiosClient";
 import { API_URL } from "@/utils/constants";
-import CountryMap from "./CountryMap";
+import CountryMap, { Marker } from "./CountryMap";
 import PaginationWithTextWitIcon from "../ui/pagination/PaginationWithTextWitIcon";
 import { ChevronDown } from "lucide-react";
 
@@ -20,6 +20,7 @@ interface Device {
   lastHeartbeat: string;
   createdAt: string;
   enabled: boolean;
+  location: string;
 }
 
 interface Group {
@@ -29,7 +30,7 @@ interface Group {
   device_count?: number;
 }
 
-interface ApiDeviceData {
+interface ApiMusicDeviceData {
   id: string;
   mac_address: string;
   name: string;
@@ -39,6 +40,11 @@ interface ApiDeviceData {
   muted: boolean;
   last_heartbeat?: string;
   created_at: string;
+  geo_latitude?: number;
+  geo_longitude?: number;
+  geo_country?: string;
+  geo_region?: string;
+  geo_city?: string;
 }
 
 interface ApiResponse<T> {
@@ -73,16 +79,29 @@ const formatDateTime = (dateString: string): string => {
 };
 
 /**
- * Map API response to Device type
+ * Map API response to Device type and Marker type
  */
-const mapApiDevicesToTableDevices = (apiDevices: ApiDeviceData[]): Device[] => {
-  return apiDevices.map((deviceData: ApiDeviceData) => {
-    return {
+const processApiDevices = (
+  apiDevices: ApiMusicDeviceData[]
+): { devices: Device[]; markers: Marker[] } => {
+  const devices: Device[] = [];
+  const markers: Marker[] = [];
+
+  apiDevices.forEach((deviceData) => {
+    const locationParts = [
+      deviceData.geo_city,
+      deviceData.geo_region,
+      deviceData.geo_country,
+    ].filter(Boolean);
+    const location = locationParts.join(", ") || "N/A";
+
+    devices.push({
       id: deviceData.id,
       name: deviceData.name || "Unknown Device",
       type: deviceData.type || "N/A",
       macAddress: deviceData.mac_address || "N/A",
       status: deviceData.status || "unknown",
+      location,
       volume:
         typeof deviceData.volume === "number"
           ? Math.min(100, Math.max(0, deviceData.volume))
@@ -91,13 +110,25 @@ const mapApiDevicesToTableDevices = (apiDevices: ApiDeviceData[]): Device[] => {
       enabled: deviceData.status === "online",
       lastHeartbeat: deviceData.last_heartbeat || "N/A",
       createdAt: deviceData.created_at || "N/A",
-    };
+    });
+
+    if (deviceData.geo_latitude && deviceData.geo_longitude) {
+      markers.push({
+        id: deviceData.id,
+        latLng: [deviceData.geo_latitude, deviceData.geo_longitude],
+        name: deviceData.name,
+        status: deviceData.status,
+      });
+    }
   });
+
+  return { devices, markers };
 };
 
 // ===== Main Component =====
 export default function DemographicCard() {
   const [devices, setDevices] = useState<Device[]>([]);
+  const [markers, setMarkers] = useState<Marker[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(true);
   const [loadingDevices, setLoadingDevices] = useState(false);
@@ -111,7 +142,7 @@ export default function DemographicCard() {
   const devicesPerPage = 5;
 
   // localStorage key for persistence
-  const STORAGE_KEY = "selectedGroupIdMap";
+  const STORAGE_KEY = "selectedGroupId";
 
   // ===== Close Dropdown on Outside Click =====
   useEffect(() => {
@@ -224,71 +255,31 @@ export default function DemographicCard() {
     fetchGroups();
   }, []);
 
-  // ===== Fetch Devices (group or all) =====
+  // ===== Fetch Devices (all with geo data) =====
   useEffect(() => {
-    if (!selectedGroup) {
-      setDevices([]);
-      return;
-    }
-
-    const fetchDevicesForGroup = async (
-      groupId: string
-    ): Promise<ApiDeviceData[]> => {
-      const endpoint = `${API_URL}/api/v1/groups/${groupId}/devices`;
-      console.log(`[DemographicCard] Fetching devices from: ${endpoint}`);
-      const res = await axiosClient.get<ApiResponse<ApiDeviceData[]>>(
-        endpoint
-      );
-      if (!res.data.success) {
-        throw new Error(res.data.message || "Failed to fetch devices");
-      }
-      const rawDevices = res.data?.data || [];
-      if (!Array.isArray(rawDevices)) {
-        throw new Error("Invalid API response format: data is not an array");
-      }
-      console.log(
-        `[DemographicCard] Fetched ${rawDevices.length} devices for group ${groupId}`
-      );
-      return rawDevices;
-    };
-
-    const fetchDevices = async () => {
+    const fetchMusicDevices = async () => {
       setLoadingDevices(true);
       setError(null);
       try {
-        let allDevicesRaw: ApiDeviceData[] = [];
+        const endpoint = `${API_URL}/api/v1/devices/music/list`;
+        console.log(`[DemographicCard] Fetching music devices from: ${endpoint}`);
+        const res = await axiosClient.get<ApiResponse<{ devices: ApiMusicDeviceData[] }>>(endpoint);
 
-        if (selectedGroup === ALL_DEVICES_ID) {
-          // Fetch devices for all groups in parallel
-          const groupIds = groups.map((g) => g.id);
-          const promises = groupIds.map((id) =>
-            fetchDevicesForGroup(id).catch((err) => {
-              console.error(
-                `[DemographicCard] Error fetching devices for group ${id}:`,
-                err
-              );
-              return [] as ApiDeviceData[];
-            })
-          );
-          const results = await Promise.all(promises);
-          allDevicesRaw = results.flat();
-
-          // De-duplicate by id in case a device belongs to multiple groups
-          const seen = new Map<string, ApiDeviceData>();
-          allDevicesRaw.forEach((d) => {
-            if (!seen.has(d.id)) {
-              seen.set(d.id, d);
-            }
-          });
-          allDevicesRaw = Array.from(seen.values());
-        } else {
-          // Single group
-          allDevicesRaw = await fetchDevicesForGroup(selectedGroup);
+        if (!res.data.success) {
+          throw new Error(res.data.message || "Failed to fetch music devices");
         }
 
-        const mappedDevices = mapApiDevicesToTableDevices(allDevicesRaw);
-        setDevices(mappedDevices);
+        const rawDevices = res.data?.data?.devices || [];
+        if (!Array.isArray(rawDevices)) {
+          throw new Error("Invalid API response format: data.devices is not an array");
+        }
+
+        console.log(`[DemographicCard] Fetched ${rawDevices.length} music devices`);
+        const { devices, markers } = processApiDevices(rawDevices);
+        setDevices(devices);
+        setMarkers(markers);
         setCurrentPage(1);
+
       } catch (err: any) {
         const errorMessage =
           err?.response?.data?.message ||
@@ -298,13 +289,14 @@ export default function DemographicCard() {
         console.error("[DemographicCard] Error:", errorMessage);
         setError(errorMessage);
         setDevices([]);
+        setMarkers([]);
       } finally {
         setLoadingDevices(false);
       }
     };
 
-    fetchDevices();
-  }, [selectedGroup, groups]);
+    fetchMusicDevices();
+  }, []); // This now runs once on mount, independent of group selection
 
   // ===== Filter Devices =====
   const filteredDevices = devices.filter((device) => {
@@ -314,7 +306,8 @@ export default function DemographicCard() {
       device.name.toLowerCase().includes(q) ||
       device.macAddress.toLowerCase().includes(q) ||
       device.type.toLowerCase().includes(q) ||
-      device.status.toLowerCase().includes(q)
+      device.status.toLowerCase().includes(q) ||
+      device.location.toLowerCase().includes(q)
     );
   });
 
@@ -492,7 +485,7 @@ export default function DemographicCard() {
           id="mapOne"
           className="mapOne map-btn -mx-4 -my-6 h-[212px] w-[252px] 2xsm:w-[307px] xsm:w-[358px] sm:-mx-6 md:w-[668px] lg:w-[634px] xl:w-[393px] 2xl:w-[554px]"
         >
-          <CountryMap />
+          <CountryMap markers={markers} />
         </div>
       </div>
 
@@ -516,7 +509,7 @@ export default function DemographicCard() {
           </svg>
           <input
             type="text"
-            placeholder="Search by name, MAC, type, status..."
+            placeholder="Search by name, MAC, type, status, location..."
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
@@ -544,6 +537,13 @@ export default function DemographicCard() {
                   <div className="flex items-center justify-between cursor-pointer">
                     <p className="font-medium text-gray-700 text-sm dark:text-gray-300">
                       Device Name
+                    </p>
+                  </div>
+                </th>
+                <th className="px-4 py-3 border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                  <div className="flex items-center justify-between cursor-pointer">
+                    <p className="font-medium text-gray-700 text-sm dark:text-gray-300">
+                      Location
                     </p>
                   </div>
                 </th>
@@ -588,7 +588,7 @@ export default function DemographicCard() {
               {paginatedDevices.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-4 py-8 border border-gray-100 dark:border-white/[0.05] text-center text-gray-500 dark:text-gray-400"
                   >
                     No devices found
@@ -600,6 +600,12 @@ export default function DemographicCard() {
                     <td className="px-4 py-4 border border-gray-100 dark:border-white/[0.05]">
                       <span className="text-sm text-gray-700 dark:text-gray-300">
                         {device.name}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-4 border border-gray-100 dark:border-white/[0.05]">
+                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                        {device.location}
                       </span>
                     </td>
 

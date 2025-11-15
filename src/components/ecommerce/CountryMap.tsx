@@ -1,10 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import axiosClient from "@/utils/axiosClient";
+import React from "react";
 import dynamic from "next/dynamic";
 import { worldMill } from "@react-jvectormap/world";
-import { API_URL } from "@/utils/constants";
 
 const VectorMap = dynamic(
   () => import("@react-jvectormap/core").then((mod) => mod.VectorMap),
@@ -13,72 +11,33 @@ const VectorMap = dynamic(
 
 interface CountryMapProps {
   mapColor?: string;
+  markers?: Marker[];
 }
 
-type DeviceLocation = {
-  id: number;
-  lat: number;
-  lng: number;
-  name: string;
-  status: string;
-};
-
-type Marker = {
-  id: number;
+export type Marker = {
+  id: string;
   latLng: [number, number];
   name: string;
-  style: {
-    fill: string;
-    borderWidth: number;
-    borderColor: string;
+  status: string;
+  style?: {
+    fill?: string;
+    borderWidth?: number;
+    borderColor?: string;
   };
 };
 
-const CountryMap: React.FC<CountryMapProps> = ({ mapColor }) => {
-  const [markers, setMarkers] = useState<Marker[]>([]);
-
-  useEffect(() => {
-    const fetchLocations = async () => {
-      try {
-        const res = await axiosClient.get<{ data: DeviceLocation[] }>(
-          `${API_URL}/api/v1/devices/location`,
-          { withCredentials: true }
-        );
-
-        console.log("Device API response:", res.data.data);
-
-        //  Lấy ra mảng từ data
-        const devices = res.data.data;
-
-        //  Lọc chỉ thiết bị online
-        const onlineDevices = devices.filter((d) => d.status === "online");
-
-        //  Format cho map markers
-        const formattedMarkers: Marker[] = onlineDevices.map((item) => ({
-          id: item.id,
-          latLng: [item.lat, item.lng],
-          name: item.name,
-          style: {
-            fill: "#465FFF",
-            borderWidth: 1,
-            borderColor: "white",
-          },
-        }));
-
-        setMarkers(formattedMarkers);
-      } catch (err) {
-        console.error("Error fetching device locations:", err);
-      }
-    };
-
-    fetchLocations();
-  }, []);
-
+const CountryMap: React.FC<CountryMapProps> = ({ mapColor, markers = [] }) => {
   return (
     <VectorMap
       map={worldMill}
       backgroundColor="transparent"
-      markers={markers}
+      markers={markers.map(marker => ({
+        ...marker,
+        style: {
+          ...marker.style,
+          fill: marker.status === 'online' ? '#465FFF' : '#A0AEC0', // Blue for online, gray for offline
+        }
+      }))}
       markerStyle={{
         initial: {
           fill: "#465FFF",
@@ -93,7 +52,7 @@ const CountryMap: React.FC<CountryMapProps> = ({ mapColor }) => {
           cursor: "pointer",
         },
       }}
-      zoomOnScroll={false}
+      zoomOnScroll={true} // Enabled zooming
       regionStyle={{
         initial: {
           fill: mapColor || "#D0D5DD",

@@ -239,11 +239,6 @@ export default function RecentOrders() {
       ? "All groups"
       : selectedGroup?.group_name || "Unknown group";
 
-  const selectedDevicesText =
-    selectedGroupId === "all"
-      ? `${groups.reduce((sum, g) => sum + (g.device_count || 0), 0)} device(s)`
-      : `${selectedGroup?.device_count ?? 0} device(s)`;
-
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-4 pb-3 pt-4 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6">
       <div className="mb-4">
@@ -339,13 +334,16 @@ export default function RecentOrders() {
                 <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
                   {selectedLabel}
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {loadingGroups
-                    ? "Loading groups..."
-                    : errorGroups
-                      ? "Failed to load groups"
-                      : selectedDevicesText}
-                </p>
+                {loadingGroups && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Loading groups...
+                  </p>
+                )}
+                {errorGroups && (
+                  <p className="text-xs text-red-500 dark:text-red-400">
+                    Failed to load
+                  </p>
+                )}
               </div>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -382,13 +380,6 @@ export default function RecentOrders() {
                     <p className="font-medium text-gray-800 dark:text-gray-200">
                       All groups
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {groups.reduce(
-                        (sum, g) => sum + (g.device_count || 0),
-                        0
-                      )}{" "}
-                      device(s)
-                    </p>
                   </div>
                 </button>
 
@@ -410,9 +401,6 @@ export default function RecentOrders() {
                     <div className="text-left">
                       <p className="font-medium text-gray-800 dark:text-gray-200 truncate">
                         {g.group_name}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {g.device_count} device(s)
                       </p>
                     </div>
                   </button>

@@ -89,7 +89,6 @@ const GroupSelector: React.FC<GroupSelectorProps> = ({
                   }`}
               >
                 <p className={`text-gray-800 dark:text-gray-200`}>{group.group_name}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{group.device_count} device(s)</p>
               </button>
             );
           })}
