@@ -228,17 +228,26 @@ export default function DemographicCard() {
           }
           rawDevices = res.data.data.devices || [];
         } else {
-          // Fetch devices for a specific group
-          const endpoint = `${API_URL}/api/v1/groups/${selectedGroup}/devices`;
-          const res = await axiosClient.get<ApiResponse<ApiDeviceData[]>>(
-            endpoint
+          // 1. Fetch all devices with geo-location
+          const allDevicesRes = await axiosClient.get<ApiResponse<{ devices: ApiDeviceData[] }>>(
+            `${API_URL}/api/v1/devices/music/list`
           );
-          if (!res.data.success) {
-            throw new Error(
-              res.data.message || "Failed to fetch devices for group"
-            );
+          if (!allDevicesRes.data.success) {
+            throw new Error("Failed to fetch device list for location data");
           }
-          rawDevices = res.data.data || [];
+          const allDevicesWithGeo = allDevicesRes.data.data.devices || [];
+
+          // 2. Fetch device IDs for the selected group
+          const groupDevicesRes = await axiosClient.get<ApiResponse<ApiDeviceData[]>>(
+            `${API_URL}/api/v1/groups/${selectedGroup}/devices`
+          );
+          if (!groupDevicesRes.data.success) {
+            throw new Error("Failed to fetch devices for group");
+          }
+          const groupDeviceIds = new Set((groupDevicesRes.data.data || []).map(d => d.id));
+
+          // 3. Filter the full device list to get only devices in the selected group
+          rawDevices = allDevicesWithGeo.filter(d => groupDeviceIds.has(d.id));
         }
 
         if (!Array.isArray(rawDevices)) {
