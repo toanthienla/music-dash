@@ -130,11 +130,11 @@ const processApiDevices = (
 
 // ===== Main Component =====
 export default function DemographicCard() {
-  const [devices, setDevices] = useState<Device[]>([]);
+  const [allDevices, setAllDevices] = useState<Device[]>([]);
   const [markers, setMarkers] = useState<Marker[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(true);
-  const [loadingDevices, setLoadingDevices] = useState(false);
+  const [loadingDevices, setLoadingDevices] = useState(true); // Start as true
   const [error, setError] = useState<string | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<string>("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -167,118 +167,67 @@ export default function DemographicCard() {
     };
   }, [showGroupDropdown]);
 
-  // ===== Fetch Groups and Restore Selection =====
+  // ===== Fetch Groups and All Devices on Mount =====
   useEffect(() => {
-    const fetchGroupsAndSetInitialSelection = async () => {
+    const fetchInitialData = async () => {
       setLoadingGroups(true);
+      setLoadingDevices(true);
       setError(null);
       try {
-        const endpoint = `${API_URL}/api/v1/groups/list`;
-        const res = await axiosClient.get<ApiResponse<Group[]>>(endpoint);
-
-        if (!res.data.success || !Array.isArray(res.data.data)) {
-          throw new Error(res.data.message || "Failed to fetch groups or invalid format");
+        // Fetch groups
+        const groupsRes = await axiosClient.get<ApiResponse<Group[]>>(`${API_URL}/api/v1/groups/list`);
+        if (!groupsRes.data.success || !Array.isArray(groupsRes.data.data)) {
+          throw new Error(groupsRes.data.message || "Failed to fetch groups");
         }
-
-        const groupsList = res.data.data;
+        const groupsList = groupsRes.data.data;
         setGroups(groupsList);
 
-        const restoredId = localStorage.getItem(STORAGE_KEY);
+        // Fetch all devices with location data
+        const devicesRes = await axiosClient.get<ApiResponse<{ devices: ApiDeviceData[] }>>(
+          `${API_URL}/api/v1/devices/music/list`
+        );
+        if (!devicesRes.data.success || !devicesRes.data.data.devices) {
+          throw new Error(devicesRes.data.message || "Failed to fetch devices");
+        }
+        const { devices, markers } = processApiDevices(devicesRes.data.data.devices);
+        setAllDevices(devices);
+        setMarkers(markers);
 
+        // Restore selection or set default
+        const restoredId = localStorage.getItem(STORAGE_KEY);
         if (
           restoredId &&
           (restoredId === ALL_DEVICES_ID || groupsList.some((g) => g.id === restoredId))
         ) {
           setSelectedGroup(restoredId);
-        } else if (groupsList.length > 0) {
+        } else {
           setSelectedGroup(ALL_DEVICES_ID);
-          localStorage.setItem(STORAGE_KEY, ALL_DEVICES_ID);
         }
+
       } catch (err: any) {
-        const errorMessage =
-          err?.response?.data?.message || err?.message || "Failed to fetch groups";
-        setError(errorMessage);
-        setGroups([]);
+        setError(err.message || "Failed to load initial data");
       } finally {
         setLoadingGroups(false);
-      }
-    };
-
-    fetchGroupsAndSetInitialSelection();
-  }, []);
-
-  // ===== Fetch Devices based on selected group =====
-  useEffect(() => {
-    if (!selectedGroup) return;
-
-    const fetchDevices = async () => {
-      setLoadingDevices(true);
-      setError(null);
-      let rawDevices: ApiDeviceData[] = [];
-
-      try {
-        if (selectedGroup === ALL_DEVICES_ID) {
-          // Fetch all devices for the map and initial view
-          const endpoint = `${API_URL}/api/v1/devices/music/list`;
-          const res = await axiosClient.get<ApiResponse<{ devices: ApiDeviceData[] }>>(
-            endpoint
-          );
-          if (!res.data.success) {
-            throw new Error(res.data.message || "Failed to fetch all devices");
-          }
-          rawDevices = res.data.data.devices || [];
-        } else {
-          // 1. Fetch all devices with geo-location
-          const allDevicesRes = await axiosClient.get<ApiResponse<{ devices: ApiDeviceData[] }>>(
-            `${API_URL}/api/v1/devices/music/list`
-          );
-          if (!allDevicesRes.data.success) {
-            throw new Error("Failed to fetch device list for location data");
-          }
-          const allDevicesWithGeo = allDevicesRes.data.data.devices || [];
-
-          // 2. Fetch device IDs for the selected group
-          const groupDevicesRes = await axiosClient.get<ApiResponse<ApiDeviceData[]>>(
-            `${API_URL}/api/v1/groups/${selectedGroup}/devices`
-          );
-          if (!groupDevicesRes.data.success) {
-            throw new Error("Failed to fetch devices for group");
-          }
-          const groupDeviceIds = new Set((groupDevicesRes.data.data || []).map(d => d.id));
-
-          // 3. Filter the full device list to get only devices in the selected group
-          rawDevices = allDevicesWithGeo.filter(d => groupDeviceIds.has(d.id));
-        }
-
-        if (!Array.isArray(rawDevices)) {
-          throw new Error("Invalid API response format");
-        }
-
-        const { devices, markers } = processApiDevices(rawDevices);
-        setDevices(devices);
-        setMarkers(markers); // Always update markers with the latest fetched data
-
-        setCurrentPage(1);
-      } catch (err: any) {
-        const errorMessage =
-          err?.response?.data?.message ||
-          err?.message ||
-          "Failed to fetch devices";
-        setError(errorMessage);
-        setDevices([]);
-        setMarkers([]);
-      } finally {
         setLoadingDevices(false);
       }
     };
 
-    fetchDevices();
-  }, [selectedGroup]);
+    fetchInitialData();
+  }, []);
 
 
-  // ===== Filter Devices by search term =====
-  const filteredDevices = devices.filter((device) => {
-    if (!searchTerm) return true;
+  // ===== Filter Devices based on selected group and search term =====
+  const devicesForTable = allDevices.filter((device) => {
+    const inGroup =
+      selectedGroup === ALL_DEVICES_ID || device.deviceGroupId === selectedGroup;
+    if (!inGroup) {
+      return false;
+    }
+
+    if (!searchTerm) {
+      return true;
+    }
+
     const q = searchTerm.toLowerCase();
     return (
       device.name.toLowerCase().includes(q) ||
@@ -293,10 +242,10 @@ export default function DemographicCard() {
   // ===== Pagination =====
   const totalPages = Math.max(
     1,
-    Math.ceil(filteredDevices.length / devicesPerPage)
+    Math.ceil(devicesForTable.length / devicesPerPage)
   );
   const startIndex = (currentPage - 1) * devicesPerPage;
-  const paginatedDevices = filteredDevices.slice(
+  const paginatedDevices = devicesForTable.slice(
     startIndex,
     startIndex + devicesPerPage
   );
@@ -343,40 +292,20 @@ export default function DemographicCard() {
     return (
       <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
         <div className="flex items-center justify-center h-64">
-          <p className="text-gray-500 dark:text-gray-400">Loading groups...</p>
+          <p className="text-gray-500 dark:text-gray-400">Loading...</p>
         </div>
       </div>
     );
   }
 
-  if (groups.length === 0) {
-    return (
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <p className="text-gray-500 dark:text-gray-400 mb-4">
-              No groups available
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error && !loadingGroups && devices.length === 0) {
+  if (error) {
     return (
       <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <p className="text-red-500 dark:text-red-400 mb-4">{error}</p>
             <button
-              onClick={() => handleGroupSelect(selectedGroup)} // Retry fetching for the current group
+              onClick={() => window.location.reload()}
               className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
             >
               Retry
@@ -647,12 +576,12 @@ export default function DemographicCard() {
       )}
 
       {/* ===== Pagination ===== */}
-      {!loadingDevices && filteredDevices.length > 0 && (
+      {!loadingDevices && devicesForTable.length > 0 && (
         <div className="flex items-center justify-between border-t border-gray-100 dark:border-gray-800 pt-4 mt-4">
           <div className="text-sm text-gray-600 dark:text-gray-400">
             Showing {startIndex + 1} to{" "}
-            {Math.min(startIndex + devicesPerPage, filteredDevices.length)} of{" "}
-            {filteredDevices.length} devices
+            {Math.min(startIndex + devicesPerPage, devicesForTable.length)} of{" "}
+            {devicesForTable.length} devices
           </div>
           <div className="flex justify-center">
             <PaginationWithTextWitIcon

@@ -33,6 +33,7 @@ interface QueueListProps {
   isRemovingContextAtPosition: number | null;
   showClearConfirm: boolean;
   isClearing: boolean;
+  queueHeight: number; // New prop for dynamic height
   onSongClick: (song: Song, index: number) => void;
   onRemoveContext: (position: number) => void;
   onClearQueueClick: () => void;
@@ -48,6 +49,7 @@ const QueueList: React.FC<QueueListProps> = ({
   isRemovingContextAtPosition,
   showClearConfirm,
   isClearing,
+  queueHeight, // Use the height from props
   onSongClick,
   onRemoveContext,
   onClearQueueClick,
@@ -110,9 +112,12 @@ const QueueList: React.FC<QueueListProps> = ({
         </div>
 
         {/* Queue Items */}
-        <div className="space-y-1 max-h-80 overflow-y-auto">
+        <div
+          className="space-y-1 overflow-y-auto"
+          style={{ height: `${queueHeight}px` }} // Apply dynamic height
+        >
           {queueItems.length === 0 ? (
-            <div className="flex items-center justify-center py-8 text-center">
+            <div className="flex items-center justify-center py-8 text-center h-full">
               <div>
                 <Music size={32} className="text-gray-300 mx-auto mb-2" />
                 <p className="text-xs text-gray-500">Queue is empty</p>

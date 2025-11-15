@@ -8,6 +8,7 @@ import PlayerControls from "./PlayerControls";
 import AddToQueuePanel from "./AddToQueuePanel";
 import QueueList from "./QueueList";
 import EmptyQueuePanel from "./EmptyQueuePanel";
+import { GripHorizontal } from "lucide-react";
 
 interface Group {
   id: string;
@@ -214,6 +215,9 @@ function generatePlaceholderCover(text?: string, size = 400) {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
+const MIN_QUEUE_HEIGHT = 150; // min-h-[150px]
+const ESTIMATED_ITEM_HEIGHT = 56; // Estimated height for one queue context item
+
 const QueuePanel: React.FC = () => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
@@ -252,6 +256,8 @@ const QueuePanel: React.FC = () => {
     useState<boolean>(false);
   const [shouldRefreshPlaylistTab, setShouldRefreshPlaylistTab] =
     useState<boolean>(false);
+  const [queueHeight, setQueueHeight] = useState<number>(320); // Default height
+  const [isResizing, setIsResizing] = useState<boolean>(false);
 
   // New: indicate UI is switching groups and loading the queue
   const [isSwitchingGroup, setIsSwitchingGroup] = useState<boolean>(false);
@@ -259,15 +265,22 @@ const QueuePanel: React.FC = () => {
   const playbackStartTimeRef = useRef<number>(0);
   const lastSyncTimeRef = useRef<number>(0);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const initialHeightRef = useRef<number>(queueHeight);
+  const initialDragYRef = useRef<number>(0);
 
   // persist key
   const STORAGE_KEY = "selectedGroupId";
+  const HEIGHT_STORAGE_KEY = "queuePanelHeight";
 
   const groupId = selectedGroup?.id || "";
 
   const isPreviousDisabled = currentSongIndex === 0 || allSongs.length === 0;
   const isNextDisabled =
     currentSongIndex === allSongs.length - 1 || allSongs.length === 0;
+
+  // Calculate max height based on content
+  const maxQueueHeight = queueItems.length > 0 ? queueItems.length * ESTIMATED_ITEM_HEIGHT + 100 : MIN_QUEUE_HEIGHT;
+
 
   // Wrapper to handle group selection from UI: persist, set state, show switching UI only when changing group
   const handleGroupSelect = (g: Group) => {
@@ -336,6 +349,22 @@ const QueuePanel: React.FC = () => {
     fetchGroups();
     // run once on mount
   }, []);
+
+  // Restore queue height from localStorage
+  useEffect(() => {
+    try {
+      const savedHeight = localStorage.getItem(HEIGHT_STORAGE_KEY);
+      if (savedHeight) {
+        const parsedHeight = parseInt(savedHeight, 10);
+        if (!isNaN(parsedHeight) && parsedHeight >= MIN_QUEUE_HEIGHT) {
+          setQueueHeight(parsedHeight);
+        }
+      }
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+  }, []);
+
 
   // When selectedGroup changes (via UI or restored), persist it so reload remembers.
   useEffect(() => {
@@ -1282,6 +1311,48 @@ const QueuePanel: React.FC = () => {
     isPlaying,
   ]);
 
+  const handleResizeStart = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsResizing(true);
+    initialHeightRef.current = queueHeight;
+    initialDragYRef.current = e.clientY;
+  };
+
+  useEffect(() => {
+    const handleResize = (e: MouseEvent) => {
+      if (isResizing) {
+        const deltaY = e.clientY - initialDragYRef.current;
+        const newHeight = initialHeightRef.current + deltaY;
+        // Clamp height within min/max bounds
+        const clampedHeight = Math.max(MIN_QUEUE_HEIGHT, Math.min(newHeight, maxQueueHeight));
+        setQueueHeight(clampedHeight);
+      }
+    };
+
+    const handleResizeEnd = () => {
+      if (isResizing) {
+        setIsResizing(false);
+        // Persist the final height to localStorage
+        try {
+          localStorage.setItem(HEIGHT_STORAGE_KEY, queueHeight.toString());
+        } catch (e) {
+          // ignore
+        }
+      }
+    };
+
+    if (isResizing) {
+      document.addEventListener("mousemove", handleResize);
+      document.addEventListener("mouseup", handleResizeEnd);
+    }
+
+    return () => {
+      document.removeEventListener("mousemove", handleResize);
+      document.removeEventListener("mouseup", handleResizeEnd);
+    };
+  }, [isResizing, queueHeight, maxQueueHeight]);
+
+
   // UI render and passing a wrapper for onGroupSelect so QueuePanel persists selection whenever user changes it.
   if (loadingGroups) {
     return (
@@ -1436,6 +1507,7 @@ const QueuePanel: React.FC = () => {
           />
 
           <QueueList
+            queueHeight={queueHeight}
             queueItems={queueItems}
             allSongs={allSongs}
             currentSongIndex={currentSongIndex}
@@ -1449,6 +1521,12 @@ const QueuePanel: React.FC = () => {
             onClearQueueConfirm={handleClearQueue}
             generatePlaceholderCover={generatePlaceholderCover}
           />
+          <div
+            onMouseDown={handleResizeStart}
+            className="w-full h-4 flex items-center justify-center cursor-row-resize group"
+          >
+            <div className="w-10 h-1.5 bg-gray-200 rounded-full group-hover:bg-gray-300 transition-colors" />
+          </div>
         </>
       )}
     </div>
