@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState, useRef } from "react";
 import axiosClient from "@/utils/axiosClient";
-import { API_URL } from "@/utils/constants";
+import { API_URL, PROXY_ACCESS_TOKEN } from "@/utils/constants";
 import CountryMap, { Marker } from "./CountryMap";
 import PaginationWithTextWitIcon from "../ui/pagination/PaginationWithTextWitIcon";
 import { ChevronDown } from "lucide-react";
@@ -54,6 +54,13 @@ interface ApiResponse<T> {
   message: string;
   data: T;
   success: boolean;
+}
+
+// Type for WebSocket message
+interface WebSocketMessage {
+  event: string;
+  device_id: string;
+  status: string;
 }
 
 // Synthetic id for "All devices"
@@ -213,6 +220,59 @@ export default function DemographicCard() {
     };
 
     fetchInitialData();
+  }, []);
+
+  // ===== WebSocket for Real-time Status Updates =====
+  useEffect(() => {
+    if (!PROXY_ACCESS_TOKEN) {
+      console.warn("WebSocket connection skipped: PROXY_ACCESS_TOKEN is not available.");
+      return;
+    }
+
+    // Pass the token as a query parameter.
+    const wsUrl = `wss://musicplayer.iotek.dev/api/v1/ws?token=${PROXY_ACCESS_TOKEN}`;
+    const socket = new WebSocket(wsUrl);
+
+    socket.onopen = () => {
+      console.log("WebSocket connection established");
+    };
+
+    socket.onmessage = (event) => {
+      try {
+        const message: WebSocketMessage = JSON.parse(event.data);
+        if (message.event === "device_status_change" && message.device_id && message.status) {
+          setAllDevices((prevDevices) =>
+            prevDevices.map((device) =>
+              device.id === message.device_id
+                ? {
+                  ...device,
+                  status: message.status,
+                  enabled: message.status === "online",
+                }
+                : device
+            )
+          );
+        }
+      } catch (e) {
+        console.error("Failed to parse incoming WebSocket message. Data:", event.data, "Error:", e);
+      }
+    };
+
+    socket.onerror = (event) => {
+      // Log any WebSocket errors that occur
+      console.error("WebSocket error occurred:", event);
+    };
+
+    socket.onclose = (event) => {
+      // Log when the connection is closed, including the code and reason
+      console.log(`WebSocket connection closed: Code=${event.code}, Reason=${event.reason}`);
+    };
+
+    return () => {
+      if (socket.readyState === 1) { // <-- Make sure socket is open before trying to close
+        socket.close();
+      }
+    };
   }, []);
 
 
