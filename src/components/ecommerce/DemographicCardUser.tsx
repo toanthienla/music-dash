@@ -229,12 +229,13 @@ export default function DemographicCard() {
       return;
     }
 
-    // Pass the token as a query parameter.
-    const wsUrl = `wss://musicplayer.iotek.dev/api/v1/ws?token=${PROXY_ACCESS_TOKEN}`;
+    const wsUrl = "wss://musicplayer.iotek.dev/api/v1/ws";
     const socket = new WebSocket(wsUrl);
 
     socket.onopen = () => {
       console.log("WebSocket connection established");
+      // The server expects an authorization message with the token
+      socket.send(`Authorization: Bearer ${PROXY_ACCESS_TOKEN}`);
     };
 
     socket.onmessage = (event) => {
@@ -254,24 +255,20 @@ export default function DemographicCard() {
           );
         }
       } catch (e) {
-        console.error("Failed to parse incoming WebSocket message. Data:", event.data, "Error:", e);
+        console.error("Failed to parse WebSocket message:", event.data, e);
       }
     };
 
-    socket.onerror = (event) => {
-      // Log any WebSocket errors that occur
-      console.error("WebSocket error occurred:", event);
+    socket.onerror = (error) => {
+      console.error("WebSocket error:", error);
     };
 
     socket.onclose = (event) => {
-      // Log when the connection is closed, including the code and reason
-      console.log(`WebSocket connection closed: Code=${event.code}, Reason=${event.reason}`);
+      console.log("WebSocket connection closed:", event.code, event.reason);
     };
 
     return () => {
-      if (socket.readyState === 1) { // <-- Make sure socket is open before trying to close
-        socket.close();
-      }
+      socket.close();
     };
   }, []);
 
