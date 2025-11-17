@@ -175,7 +175,7 @@ export default function DemographicCard() {
       setError(null);
       try {
         // Fetch groups
-        const groupsRes = await axiosClient.get<ApiResponse<Group[]>>(`${API_URL}/api/v1/groups/list`);
+        const groupsRes = await axiosClient.get<ApiResponse<Group[]>>(`${API_URL}/api/v1/groups`);
         if (!groupsRes.data.success || !Array.isArray(groupsRes.data.data)) {
           throw new Error(groupsRes.data.message || "Failed to fetch groups");
         }

@@ -307,7 +307,7 @@ const QueuePanel: React.FC = () => {
     const fetchGroups = async () => {
       try {
         setLoadingGroups(true);
-        const response = await axiosClient.get(`${API_URL}/api/v1/groups/list`);
+        const response = await axiosClient.get(`${API_URL}/api/v1/groups`);
 
         if (response.data?.success && response.data?.data) {
           const groupsList: Group[] = response.data.data;

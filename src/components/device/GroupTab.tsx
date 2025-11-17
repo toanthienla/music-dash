@@ -185,7 +185,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
         );
       } else {
         response = await axiosClient.post<ApiResponse<any>>(
-          `${API_URL}/api/v1/groups/list`,
+          `${API_URL}/api/v1/groups`,
           formDataPayload,
           {
             headers: {
@@ -487,7 +487,7 @@ export default function GroupTab() {
     setLoading(true);
     setFetchError(null);
     try {
-      const endpoint = `${API_URL}/api/v1/groups/list`;
+      const endpoint = `${API_URL}/api/v1/groups`;
       console.log(`[Groups] Fetching from: ${endpoint}`);
 
       const res = await axiosClient.get<ApiResponse<ApiGroupData[]>>(endpoint);
@@ -547,7 +547,7 @@ export default function GroupTab() {
   const handleDeleteGroup = async (groupId: string) => {
     try {
       const response = await axiosClient.delete<ApiResponse<any>>(
-        `${API_URL}/api/v1/groups/list/${groupId}`
+        `${API_URL}/api/v1/groups/${groupId}`
       );
 
       if (!response.data.success) {

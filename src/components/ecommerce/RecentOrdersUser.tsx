@@ -184,7 +184,7 @@ export default function RecentOrders() {
       try {
         setLoadingGroups(true);
         setErrorGroups(null);
-        const res = await axiosClient.get(`${API_URL}/api/v1/groups/list`);
+        const res = await axiosClient.get(`${API_URL}/api/v1/groups`);
         if (res.data.success && Array.isArray(res.data.data)) {
           setGroups(res.data.data);
         }
