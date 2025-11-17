@@ -230,18 +230,23 @@ export default function DemographicCard() {
     }
 
     const wsUrl = "wss://musicplayer.iotek.dev/api/v1/ws";
-    const socket = new WebSocket(wsUrl);
+
+    // ★ Pass Authorization via subprotocol
+    const socket = new WebSocket(wsUrl, [`Authorization: Bearer ${PROXY_ACCESS_TOKEN}`]);
 
     socket.onopen = () => {
       console.log("WebSocket connection established");
-      // The server expects an authorization message with the token
-      socket.send(`Authorization: Bearer ${PROXY_ACCESS_TOKEN}`);
     };
 
     socket.onmessage = (event) => {
       try {
         const message: WebSocketMessage = JSON.parse(event.data);
-        if (message.event === "device_status_change" && message.device_id && message.status) {
+
+        if (
+          message.event === "device_status_change" &&
+          message.device_id &&
+          message.status
+        ) {
           setAllDevices((prevDevices) =>
             prevDevices.map((device) =>
               device.id === message.device_id
@@ -271,7 +276,6 @@ export default function DemographicCard() {
       socket.close();
     };
   }, []);
-
 
   // ===== Filter Devices based on selected group and search term =====
   const devicesForTable = allDevices.filter((device) => {
