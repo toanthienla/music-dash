@@ -371,8 +371,7 @@ export default function PlaylistDetail({ id }: { id: string }) {
         <div className="flex items-center gap-4">
           <button
             onClick={() => {
-              router.push("/media");
-              setActiveTab("media");
+              router.push("/media?tab=media");
             }}
             className={`pb-3 font-semibold border-b-2 transition-colors ${activeTab === "media"
               ? "text-orange-500 border-orange-400"
@@ -382,7 +381,9 @@ export default function PlaylistDetail({ id }: { id: string }) {
             Media
           </button>
           <button
-            onClick={() => setActiveTab("playlist")}
+            onClick={() => {
+              router.push("/media?tab=playlist");
+            }}
             className={`pb-3 font-semibold border-b-2 transition-colors ${activeTab === "playlist"
               ? "text-orange-500 border-orange-400"
               : "text-gray-400 border-transparent"

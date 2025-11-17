@@ -97,6 +97,7 @@ export default function MediaTab() {
   const [openMenuId, setOpenMenuId] = React.useState<string | null>(null);
 
   const [music, setMusic] = React.useState<Music[]>([]);
+  const [totalItems, setTotalItems] = React.useState(0);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
 
   const [mediaForm, setMediaForm] = React.useState<MusicFormData>({ title: "" });
@@ -133,14 +134,21 @@ export default function MediaTab() {
     }
   }, [openMenuId]);
 
-  // Fetch music list
+  // Fetch music list with pagination
   React.useEffect(() => {
     let canceled = false;
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const response = await axiosClient.get(MUSIC_API_URL);
+        // Add page and pageSize as query parameters
+        const response = await axiosClient.get(MUSIC_API_URL, {
+          params: {
+            page: currentPage,
+            pageSize: pageSize,
+            ...(searchTerm && { search: searchTerm }),
+          },
+        });
         const raw = response.data;
 
         if (!raw?.success || !raw?.data?.data || !Array.isArray(raw.data.data)) {
@@ -162,11 +170,14 @@ export default function MediaTab() {
 
         if (!canceled) {
           setMusic(formatted);
+          // Set total items from API response
+          setTotalItems(raw.data.total || 0);
         }
       } catch (err: any) {
         if (!canceled) {
           setError(err?.message ?? "Failed to fetch music");
           setMusic([]);
+          setTotalItems(0);
         }
       } finally {
         if (!canceled) setLoading(false);
@@ -175,7 +186,7 @@ export default function MediaTab() {
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [currentPage, pageSize, searchTerm]);
 
   const resetForm = () => {
     setMediaForm({ title: "" });
@@ -267,24 +278,8 @@ export default function MediaTab() {
       });
 
       if (response.data?.success) {
-        const refreshed = await axiosClient.get(MUSIC_API_URL);
-        const raw = refreshed.data;
-        if (raw?.success && Array.isArray(raw.data?.data)) {
-          const formatted: Music[] = raw.data.data.map((item: any) => ({
-            id: item.id,
-            title: item.title ?? "Unknown Title",
-            artist: item.artist ?? "Unknown Artist",
-            album: item.album,
-            genre: item.genre,
-            releaseYear: item.releaseYear,
-            visibility: item.visibility,
-            durationSeconds: item.durationSeconds ?? 0,
-            fileUrl: item.fileUrl,
-            thumbnailUrl: item.thumbnailUrl,
-          }));
-          setMusic(formatted);
-        }
-
+        // Reset to first page to see newly added music
+        setCurrentPage(1);
         setIsAddOpen(false);
         resetForm();
         alert("Music uploaded successfully!");
@@ -343,24 +338,8 @@ export default function MediaTab() {
       });
 
       if (response.data?.success) {
-        const refreshed = await axiosClient.get(MUSIC_API_URL);
-        const raw = refreshed.data;
-        if (raw?.success && Array.isArray(raw.data?.data)) {
-          const formatted: Music[] = raw.data.data.map((item: any) => ({
-            id: item.id,
-            title: item.title ?? "Unknown Title",
-            artist: item.artist ?? "Unknown Artist",
-            album: item.album,
-            genre: item.genre,
-            releaseYear: item.releaseYear,
-            visibility: item.visibility,
-            durationSeconds: item.durationSeconds ?? 0,
-            fileUrl: item.fileUrl,
-            thumbnailUrl: item.thumbnailUrl,
-          }));
-          setMusic(formatted);
-        }
-
+        // Refresh current page data
+        setCurrentPage(currentPage);
         setIsEditOpen(false);
         resetEditForm();
         alert("Music updated successfully!");
@@ -380,6 +359,7 @@ export default function MediaTab() {
       await axiosClient.delete(`${MUSIC_API_URL}/${musicId}`);
       const newMusic = music.filter((s) => s.id !== musicId);
       setMusic(newMusic);
+      setTotalItems(Math.max(0, totalItems - 1));
       setOpenMenuId(null);
       alert("Music deleted successfully!");
     } catch (error: any) {
@@ -397,14 +377,10 @@ export default function MediaTab() {
 
       const newMusic = music.filter((s) => !selectedIds.has(s.id));
       setMusic(newMusic);
+      setTotalItems(Math.max(0, totalItems - selectedIds.size));
       setSelectedIds(new Set());
 
-      const filteredLength = newMusic.filter((s) => {
-        if (!searchTerm) return true;
-        const q = searchTerm.toLowerCase();
-        return s.title.toLowerCase().includes(q) || (s.artist ?? "").toLowerCase().includes(q);
-      }).length;
-      const newTotalPages = Math.max(1, Math.ceil(filteredLength / pageSize));
+      const newTotalPages = Math.max(1, Math.ceil((totalItems - selectedIds.size) / pageSize));
       if (currentPage > newTotalPages) setCurrentPage(newTotalPages);
 
       alert("Music deleted successfully!");
@@ -421,18 +397,8 @@ export default function MediaTab() {
     setSelectedIds(next);
   };
 
-  // Filtering & pagination
-  const filteredMusic = music.filter((s) => {
-    if (!searchTerm) return true;
-    const q = searchTerm.toLowerCase();
-    return s.title.toLowerCase().includes(q) || (s.artist ?? "").toLowerCase().includes(q);
-  });
-  const totalItems = filteredMusic.length;
+  // Calculate total pages based on API response
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-  React.useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages);
-  }, [totalPages]);
-  const paginatedMusic = filteredMusic.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) {
@@ -528,8 +494,8 @@ export default function MediaTab() {
         {!loading && !error && (
           <>
             <div className="divide-y divide-gray-100">
-              {paginatedMusic.length > 0 ? (
-                paginatedMusic.map((item) => (
+              {music.length > 0 ? (
+                music.map((item) => (
                   <div key={item.id} className="flex items-center justify-between px-6 py-4 relative">
                     <div className="flex items-center gap-4">
                       <Checkbox

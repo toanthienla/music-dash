@@ -85,6 +85,7 @@ export default function PlaylistTab() {
   const [openMenuId, setOpenMenuId] = React.useState<string | null>(null);
 
   const [playlists, setPlaylists] = React.useState<Playlist[]>([]);
+  const [totalItems, setTotalItems] = React.useState(0);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
 
   const [playlistForm, setPlaylistForm] = React.useState<PlaylistFormData>({
@@ -126,14 +127,21 @@ export default function PlaylistTab() {
     }
   }, [openMenuId]);
 
-  // Fetch playlists
+  // Fetch playlists with pagination
   React.useEffect(() => {
     let canceled = false;
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const response = await axiosClient.get(PLAYLISTS_API_URL);
+        // Add page and pageSize as query parameters
+        const response = await axiosClient.get(PLAYLISTS_API_URL, {
+          params: {
+            page: currentPage,
+            pageSize: pageSize,
+            ...(searchTerm && { search: searchTerm }),
+          },
+        });
         const raw = response.data;
 
         if (!raw?.success || !raw?.data?.data || !Array.isArray(raw.data.data)) {
@@ -155,11 +163,14 @@ export default function PlaylistTab() {
 
         if (!canceled) {
           setPlaylists(formatted);
+          // Set total items from API response
+          setTotalItems(raw.data.total || 0);
         }
       } catch (err: any) {
         if (!canceled) {
           setError(err?.message ?? "Failed to fetch playlists");
           setPlaylists([]);
+          setTotalItems(0);
         }
       } finally {
         if (!canceled) setLoading(false);
@@ -168,7 +179,7 @@ export default function PlaylistTab() {
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [currentPage, pageSize, searchTerm]);
 
   const resetForm = () => {
     setPlaylistForm({ name: "", description: "", isPublic: false });
@@ -209,23 +220,8 @@ export default function PlaylistTab() {
       });
 
       if (response.data?.success) {
-        const refreshed = await axiosClient.get(PLAYLISTS_API_URL);
-        const raw = refreshed.data;
-        if (raw?.success && Array.isArray(raw.data?.data)) {
-          const formatted: Playlist[] = raw.data.data.map((item: any) => ({
-            id: item.id,
-            name: item.name ?? "Untitled",
-            description: item.description ?? "",
-            coverUrl: item.coverUrl ?? null,
-            userId: item.userId,
-            isPublic: item.isPublic ?? false,
-            createdAt: item.createdAt,
-            updatedAt: item.updatedAt,
-            totalDurationSeconds: item.totalDurationSeconds ?? 0,
-            trackCount: item.trackCount ?? 0,
-          }));
-          setPlaylists(formatted);
-        }
+        // Reset to first page to see newly added playlist
+        setCurrentPage(1);
         setIsAddOpen(false);
         resetForm();
         alert("Playlist created successfully!");
@@ -288,24 +284,8 @@ export default function PlaylistTab() {
       );
 
       if (response.data?.success) {
-        const refreshed = await axiosClient.get(PLAYLISTS_API_URL);
-        const raw = refreshed.data;
-        if (raw?.success && Array.isArray(raw.data?.data)) {
-          const formatted: Playlist[] = raw.data.data.map((item: any) => ({
-            id: item.id,
-            name: item.name ?? "Untitled",
-            description: item.description ?? "",
-            coverUrl: item.coverUrl ?? null,
-            userId: item.userId,
-            isPublic: item.isPublic ?? false,
-            createdAt: item.createdAt,
-            updatedAt: item.updatedAt,
-            totalDurationSeconds: item.totalDurationSeconds ?? 0,
-            trackCount: item.trackCount ?? 0,
-          }));
-          setPlaylists(formatted);
-        }
-
+        // Refresh current page data
+        setCurrentPage(currentPage);
         setIsEditOpen(false);
         resetEditForm();
         alert("Playlist updated successfully!");
@@ -325,6 +305,7 @@ export default function PlaylistTab() {
       await axiosClient.delete(`${PLAYLISTS_API_URL}/${playlistId}`);
       const newPlaylists = playlists.filter((p) => p.id !== playlistId);
       setPlaylists(newPlaylists);
+      setTotalItems(Math.max(0, totalItems - 1));
       setOpenMenuId(null);
       alert("Playlist deleted successfully!");
     } catch (error: any) {
@@ -342,14 +323,10 @@ export default function PlaylistTab() {
 
       const newPlaylists = playlists.filter((p) => !selectedIds.has(p.id));
       setPlaylists(newPlaylists);
+      setTotalItems(Math.max(0, totalItems - selectedIds.size));
       setSelectedIds(new Set());
 
-      const filteredLength = newPlaylists.filter((p) => {
-        if (!searchTerm) return true;
-        const q = searchTerm.toLowerCase();
-        return p.name.toLowerCase().includes(q);
-      }).length;
-      const newTotalPages = Math.max(1, Math.ceil(filteredLength / pageSize));
+      const newTotalPages = Math.max(1, Math.ceil((totalItems - selectedIds.size) / pageSize));
       if (currentPage > newTotalPages) setCurrentPage(newTotalPages);
 
       alert("Playlist deleted successfully!");
@@ -366,18 +343,8 @@ export default function PlaylistTab() {
     setSelectedIds(next);
   };
 
-  // Filtering & pagination
-  const filteredPlaylists = playlists.filter((p) => {
-    if (!searchTerm) return true;
-    const q = searchTerm.toLowerCase();
-    return p.name.toLowerCase().includes(q);
-  });
-  const totalItems = filteredPlaylists.length;
+  // Calculate total pages based on API response
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-  React.useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages);
-  }, [totalPages, currentPage]);
-  const paginatedPlaylists = filteredPlaylists.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) {
@@ -450,10 +417,10 @@ export default function PlaylistTab() {
 
       {!loading && !error && (
         <div className="flex flex-col min-h-[600px]">
-          {paginatedPlaylists.length > 0 ? (
+          {playlists.length > 0 ? (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-4 flex-1">
-                {paginatedPlaylists.map((item) => (
+                {playlists.map((item) => (
                   <div key={item.id} className="relative group">
                     {/* Checkbox */}
                     <div className="absolute top-3 right-3 z-10 flex items-center gap-2">

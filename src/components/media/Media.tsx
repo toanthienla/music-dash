@@ -1,11 +1,20 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import MediaTab from "./MediaTab";
 import PlaylistTab from "./PlaylistTab";
 
 export default function Media() {
   const [activeTab, setActiveTab] = useState<"media" | "playlist">("media");
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const tab = searchParams.get("tab") as "media" | "playlist" | null;
+    if (tab === "media" || tab === "playlist") {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
 
   return (
     <div className="w-full min-h-screen px-6 py-6">
