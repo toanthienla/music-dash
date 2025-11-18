@@ -231,8 +231,12 @@ export default function DemographicCard() {
 
     const wsUrl = "wss://musicplayer.iotek.dev/api/v1/ws";
 
-    // ★ Pass Authorization via subprotocol
-    const socket = new WebSocket(wsUrl, [`Authorization: Bearer ${PROXY_ACCESS_TOKEN}`]);
+    // Option B: send token in query string (browser-friendly)
+    // NOTE: Tokens in URLs can be logged by proxies and servers. For production,
+    // prefer a backend proxy (server-to-server Authorization header) or short-lived tokens.
+    const wsUrlWithToken = `${wsUrl}?access_token=${encodeURIComponent(PROXY_ACCESS_TOKEN)}`;
+
+    const socket = new WebSocket(wsUrlWithToken);
 
     socket.onopen = () => {
       console.log("WebSocket connection established");
@@ -273,7 +277,11 @@ export default function DemographicCard() {
     };
 
     return () => {
-      socket.close();
+      try {
+        socket.close();
+      } catch (e) {
+        // ignore
+      }
     };
   }, []);
 
