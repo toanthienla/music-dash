@@ -432,6 +432,11 @@ const QueuePanel: React.FC = () => {
     const formattedQueueItems: QueueItem[] = [];
     const allSongsFlattened: Song[] = [];
 
+    // ✅ Add safety check
+    if (!queueData?.contexts || !Array.isArray(queueData.contexts)) {
+      return { formattedQueueItems, allSongsFlattened };
+    }
+
     queueData.contexts.forEach((context) => {
       if (context.type === "track") {
         const fixedThumbnailUrl = fixThumbnailUrl(context.thumbnail_url);
