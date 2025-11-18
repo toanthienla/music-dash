@@ -146,7 +146,7 @@ export default function MediaTab() {
           params: {
             page: currentPage,
             pageSize: pageSize,
-            ...(searchTerm && { search: searchTerm }),
+            ...(searchTerm && { query: searchTerm }),
           },
         });
         const raw = response.data;

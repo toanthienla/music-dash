@@ -139,7 +139,7 @@ export default function PlaylistTab() {
           params: {
             page: currentPage,
             pageSize: pageSize,
-            ...(searchTerm && { search: searchTerm }),
+            ...(searchTerm && { query: searchTerm }),
           },
         });
         const raw = response.data;

@@ -10,7 +10,7 @@ import { Modal } from "../ui/modal";
 import { API_URL } from "@/utils/constants";
 
 type SongItem = {
-  id: string;
+  id: string; // This is the track ID
   title: string;
   artist: string;
   durationSeconds: number;
@@ -30,9 +30,9 @@ type PlaylistResponse = {
   trackCount?: number;
   coverUrl?: string | null;
   tracks?: Array<{
-    id: string;
+    id: string; // This is the track ID
     music: {
-      id: string;
+      id: string; // This is the music ID
       title?: string;
       artist?: string;
       durationSeconds?: number;
@@ -69,6 +69,8 @@ export default function PlaylistDetail({ id }: { id: string }) {
   const [deletingIds, setDeletingIds] = React.useState<Set<string>>(new Set());
   const [addMusicLoading, setAddMusicLoading] = React.useState(false);
   const [addingMusic, setAddingMusic] = React.useState(false);
+  const [reorderingIds, setReorderingIds] = React.useState<Set<string>>(new Set());
+  const [isReordering, setIsReordering] = React.useState(false);
 
   // local selection & search
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
@@ -77,6 +79,10 @@ export default function PlaylistDetail({ id }: { id: string }) {
   // pagination (client-side)
   const [currentPage, setCurrentPage] = React.useState(1);
   const pageSize = 20;
+
+  // Drag and drop state
+  const [draggedItem, setDraggedItem] = React.useState<string | null>(null);
+  const [dragOverItem, setDragOverItem] = React.useState<string | null>(null);
 
   // Add music to playlist modal state
   const [isAddMusicOpen, setIsAddMusicOpen] = React.useState(false);
@@ -237,7 +243,7 @@ export default function PlaylistDetail({ id }: { id: string }) {
         const mapped: SongItem[] = (data.tracks ?? []).map((t) => {
           const m = t.music ?? ({} as any);
           return {
-            id: m.id ?? t.id,
+            id: t.id, // Use track ID
             title: m.title ?? "Untitled",
             artist: m.artist ?? "Unknown Artist",
             durationSeconds: m.durationSeconds ?? 0,
@@ -261,58 +267,121 @@ export default function PlaylistDetail({ id }: { id: string }) {
     }
   };
 
-  // fetch playlist detail when id changes
-  React.useEffect(() => {
-    if (!id) return;
-    let canceled = false;
+  // Handle drag start
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, songId: string) => {
+    setDraggedItem(songId);
+    e.dataTransfer.effectAllowed = "move";
+  };
 
-    (async () => {
+  // Handle drag over
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>, songId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverItem(songId);
+  };
+
+  // Handle drag leave
+  const handleDragLeave = () => {
+    setDragOverItem(null);
+  };
+
+  // Handle drop
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>, dropIndex: number) => {
+    e.preventDefault();
+    setDragOverItem(null);
+
+    if (!draggedItem) return;
+
+    // Find indices in the full filteredSongs array (not paginated)
+    const draggedIndex = filteredSongs.findIndex((s) => s.id === draggedItem);
+    if (draggedIndex === -1) return;
+
+    // Prevent dropping on the same item
+    if (draggedIndex === dropIndex) {
+      setDraggedItem(null);
+      return;
+    }
+
+    try {
+      setIsReordering(true);
+
+      // Create new array with reordered items
+      const newSongs = [...filteredSongs];
+      const [draggedSong] = newSongs.splice(draggedIndex, 1);
+      newSongs.splice(dropIndex, 0, draggedSong);
+
+      // Update local state immediately
+      setSongs(newSongs);
+      setDraggedItem(null);
+
+      // Prepare the API payload with all tracks and their new positions using track IDs
+      const trackOrders = newSongs.map((song, index) => ({
+        track_id: song.id, // This is the track ID
+        position: index,
+      }));
+
+      // Call the reorder API
+      await axiosClient.put(`${API_URL}/api/v1/playlists/${id}/tracks/reorder`, {
+        track_orders: trackOrders,
+      });
+
+    } catch (error: any) {
+      console.error("Error reordering tracks:", error);
+      // Revert to original order on error
+      await fetchPlaylistDetail();
+      alert(error?.response?.data?.message || "Failed to reorder tracks");
+    } finally {
+      setIsReordering(false);
+      setReorderingIds(new Set());
+    }
+  };
+
+  // Fetch playlist detail function
+  const fetchPlaylistDetail = async () => {
+    if (!id) return;
+
+    try {
       setLoading(true);
       setError(null);
       setCoverImageError(false);
-      try {
-        const resp = await axiosClient.get(`${API_URL}/api/v1/playlists/${id}`);
 
-        const raw = resp?.data;
-        // Handle both response formats: {data: {...}} and direct object
-        const data: PlaylistResponse | undefined = raw?.data ?? raw;
+      const resp = await axiosClient.get(`${API_URL}/api/v1/playlists/${id}`);
 
-        if (!data) {
-          throw new Error("Invalid playlist payload");
-        }
+      const raw = resp?.data;
+      const data: PlaylistResponse | undefined = raw?.data ?? raw;
 
-        if (!canceled) {
-          setPlaylist(data);
-
-          const mapped: SongItem[] = (data.tracks ?? []).map((t) => {
-            const m = t.music ?? ({} as any);
-            return {
-              id: m.id ?? t.id,
-              title: m.title ?? "Untitled",
-              artist: m.artist ?? "Unknown Artist",
-              durationSeconds: m.durationSeconds ?? 0,
-              fileUrl: m.fileUrl ?? "",
-              coverUrl: (m as any).cover ?? null,
-            };
-          });
-
-          setSongs(mapped);
-          setCurrentPage(1);
-        }
-      } catch (err: any) {
-        if (!canceled) {
-          setError(err?.message ?? "Failed to fetch playlist");
-          setPlaylist(null);
-          setSongs([]);
-        }
-      } finally {
-        if (!canceled) setLoading(false);
+      if (!data) {
+        throw new Error("Invalid playlist payload");
       }
-    })();
 
-    return () => {
-      canceled = true;
-    };
+      setPlaylist(data);
+
+      const mapped: SongItem[] = (data.tracks ?? []).map((t) => {
+        const m = t.music ?? ({} as any);
+        return {
+          id: t.id, // Use track ID
+          title: m.title ?? "Untitled",
+          artist: m.artist ?? "Unknown Artist",
+          durationSeconds: m.durationSeconds ?? 0,
+          fileUrl: m.fileUrl ?? "",
+          coverUrl: (m as any).cover ?? null,
+        };
+      });
+
+      setSongs(mapped);
+      setCurrentPage(1);
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to fetch playlist");
+      setPlaylist(null);
+      setSongs([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // fetch playlist detail when id changes
+  React.useEffect(() => {
+    fetchPlaylistDetail();
   }, [id]);
 
   // filtered + paginated songs
@@ -537,69 +606,91 @@ export default function PlaylistDetail({ id }: { id: string }) {
             </div>
           </div>
 
+          {/* Reordering info */}
+          {isReordering && (
+            <div className="mt-4 px-6 py-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+              Reordering tracks...
+            </div>
+          )}
+
           <div className="mt-6 rounded-xl border border-gray-200 bg-white">
             <div className="divide-y divide-gray-100">
-              {paginated.map((s) => (
-                <div key={s.id} className="flex items-center justify-between px-6 py-4">
-                  <div className="flex items-center gap-4">
-                    <Checkbox
-                      checked={selected.has(s.id)}
-                      onChange={() => toggle(s.id)}
-                    />
-                    <div className="w-12 h-12 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0">
-                      {s.coverUrl ? (
-                        <Image
-                          src={s.coverUrl}
-                          width={48}
-                          height={48}
-                          alt={s.title}
-                          className="object-cover w-full h-full"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-white font-semibold text-sm" style={{ background: pickColorForText(s.title) }}>
-                          {initialsFrom(s.title)}
-                        </div>
-                      )}
+              {paginated.map((s, index) => {
+                const actualIndex = filteredSongs.findIndex((song) => song.id === s.id);
+                const isDragging = draggedItem === s.id;
+                const isDragOver = dragOverItem === s.id;
+
+                return (
+                  <div
+                    key={s.id}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, s.id)}
+                    onDragOver={(e) => handleDragOver(e, s.id)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, actualIndex)}
+                    className={`flex items-center justify-between px-6 py-4 transition-all cursor-move ${isDragging ? "opacity-50 bg-gray-50" : ""} ${isDragOver ? "bg-blue-50 border-l-4 border-blue-400" : ""
+                      } ${isReordering ? "pointer-events-none opacity-70" : ""}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <Checkbox
+                        checked={selected.has(s.id)}
+                        onChange={() => toggle(s.id)}
+                      />
+                      <div className="w-12 h-12 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0">
+                        {s.coverUrl ? (
+                          <Image
+                            src={s.coverUrl}
+                            width={48}
+                            height={48}
+                            alt={s.title}
+                            className="object-cover w-full h-full"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-white font-semibold text-sm" style={{ background: pickColorForText(s.title) }}>
+                            {initialsFrom(s.title)}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="font-semibold text-gray-800 text-sm">{s.title}</div>
+                        <div className="text-gray-500 text-xs mt-1">{s.artist}</div>
+                      </div>
                     </div>
 
-                    <div>
-                      <div className="font-semibold text-gray-800 text-sm">{s.title}</div>
-                      <div className="text-gray-500 text-xs mt-1">{s.artist}</div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-gray-500 text-sm">{formatDuration(s.durationSeconds)}</div>
+
+                      <audio id={`audio-${s.id}`} src={s.fileUrl} onEnded={() => { setIsPlaying(false); setCurrentPlayingId(null); }} />
+
+                      <button
+                        aria-label="play"
+                        onClick={() => handlePlayPause(s)}
+                        className="w-9 h-9 flex items-center justify-center rounded-full bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+                      >
+                        {isPlaying && currentPlayingId === s.id ? (
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M6 4h3v12H6zM11 4h3v12h-3z" />
+                          </svg>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M6.5 5.5v9l7-4.5-7-4.5z" />
+                          </svg>
+                        )}
+                      </button>
+
+                      <button className="p-2 text-gray-400 hover:text-gray-600 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zm6 0a2 2 0 11-4 0 2 2 0 014 0zm6 0a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-4">
-                    <div className="text-gray-500 text-sm">{formatDuration(s.durationSeconds)}</div>
-
-                    <audio id={`audio-${s.id}`} src={s.fileUrl} onEnded={() => { setIsPlaying(false); setCurrentPlayingId(null); }} />
-
-                    <button
-                      aria-label="play"
-                      onClick={() => handlePlayPause(s)}
-                      className="w-9 h-9 flex items-center justify-center rounded-full bg-orange-500 text-white hover:bg-orange-600 transition-colors"
-                    >
-                      {isPlaying && currentPlayingId === s.id ? (
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M6 4h3v12H6zM11 4h3v12h-3z" />
-                        </svg>
-                      ) : (
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M6.5 5.5v9l7-4.5-7-4.5z" />
-                        </svg>
-                      )}
-                    </button>
-
-                    <button className="p-2 text-gray-400 hover:text-gray-600 transition-colors">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zm6 0a2 2 0 11-4 0 2 2 0 014 0zm6 0a2 2 0 11-4 0 2 2 0 014 0z" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
 
               {paginated.length === 0 && <div className="px-6 py-8 text-sm text-gray-500">No songs found.</div>}
             </div>

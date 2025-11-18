@@ -258,6 +258,10 @@ const QueuePanel: React.FC = () => {
     useState<boolean>(false);
   const [queueHeight, setQueueHeight] = useState<number>(320); // Default height
   const [isResizing, setIsResizing] = useState<boolean>(false);
+  const [repeatMode, setRepeatMode] = useState<"none" | "context" | "all_queue">("none");
+  const [isChangingRepeatMode, setIsChangingRepeatMode] = useState<boolean>(false);
+  const [shuffle, setShuffle] = useState<boolean>(false);
+  const [isChangingShuffle, setIsChangingShuffle] = useState<boolean>(false);
 
   // New: indicate UI is switching groups and loading the queue
   const [isSwitchingGroup, setIsSwitchingGroup] = useState<boolean>(false);
@@ -280,7 +284,6 @@ const QueuePanel: React.FC = () => {
 
   // Calculate max height based on content
   const maxQueueHeight = queueItems.length > 0 ? queueItems.length * ESTIMATED_ITEM_HEIGHT + 100 : MIN_QUEUE_HEIGHT;
-
 
   // Wrapper to handle group selection from UI: persist, set state, show switching UI only when changing group
   const handleGroupSelect = (g: Group) => {
@@ -365,7 +368,6 @@ const QueuePanel: React.FC = () => {
     }
   }, []);
 
-
   // When selectedGroup changes (via UI or restored), persist it so reload remembers.
   useEffect(() => {
     if (!selectedGroup) return;
@@ -431,11 +433,6 @@ const QueuePanel: React.FC = () => {
   const formatQueueData = (queueData: QueueResponse) => {
     const formattedQueueItems: QueueItem[] = [];
     const allSongsFlattened: Song[] = [];
-
-    // ✅ Add safety check
-    if (!queueData?.contexts || !Array.isArray(queueData.contexts)) {
-      return { formattedQueueItems, allSongsFlattened };
-    }
 
     queueData.contexts.forEach((context) => {
       if (context.type === "track") {
@@ -510,7 +507,6 @@ const QueuePanel: React.FC = () => {
     return { formattedQueueItems, allSongsFlattened };
   };
 
-  // Prefer matching by current_context.id first, then fall back to current_track_id
   const syncPlaybackStateWithQueue = async (
     songs: Song[],
     queueItems: QueueItem[]
@@ -522,6 +518,8 @@ const QueuePanel: React.FC = () => {
       setIsPlaying(false);
       lastSyncTimeRef.current = 0;
       playbackStartTimeRef.current = Date.now();
+      setRepeatMode("none");
+      setShuffle(false);
       return;
     }
 
@@ -607,6 +605,14 @@ const QueuePanel: React.FC = () => {
           // Set playback status and volume
           setIsPlaying(playbackState.playback_status === "playing");
           setVolume(playbackState.volume_level);
+
+          // Set repeat mode - use backend value directly (no conversion!)
+          if (playbackState.repeat_mode) {
+            setRepeatMode(playbackState.repeat_mode as "none" | "context" | "all_queue");
+          }
+
+          // Set shuffle state
+          setShuffle(playbackState.shuffle || false);
           return;
         }
 
@@ -617,6 +623,8 @@ const QueuePanel: React.FC = () => {
         setIsPlaying(false);
         lastSyncTimeRef.current = 0;
         playbackStartTimeRef.current = Date.now();
+        setRepeatMode("none");
+        setShuffle(false);
       }
     } catch (playbackErr: any) {
       // On error, reset to first song
@@ -626,6 +634,8 @@ const QueuePanel: React.FC = () => {
       setIsPlaying(false);
       lastSyncTimeRef.current = 0;
       playbackStartTimeRef.current = Date.now();
+      setRepeatMode("none");
+      setShuffle(false);
     }
   };
 
@@ -936,6 +946,50 @@ const QueuePanel: React.FC = () => {
     }
   };
 
+  const handleRepeatModeChange = async (mode: "none" | "context" | "all_queue") => {
+    try {
+      if (!groupId) return;
+
+      setIsChangingRepeatMode(true);
+
+      // Send the EXACT mode to backend - no mapping!
+      await axiosClient.post(
+        `${API_URL}/api/v1/groups/${groupId}/playback/repeat`,
+        { repeat_mode: mode }
+      );
+
+      setRepeatMode(mode);
+    } catch (err: any) {
+      console.error("Error changing repeat mode:", err);
+    } finally {
+      setIsChangingRepeatMode(false);
+    }
+  };
+
+  const handleShuffleToggle = async () => {
+    try {
+      if (!groupId) return;
+
+      setIsChangingShuffle(true);
+
+      const endpoint = shuffle
+        ? `${API_URL}/api/v1/groups/${groupId}/queue/shuffle/disable`
+        : `${API_URL}/api/v1/groups/${groupId}/queue/shuffle/enable`;
+
+      const requestBody = shuffle ? {} : { mode: "all_queue" };
+
+      const response = await axiosClient.post(endpoint, requestBody);
+
+      if (response.data?.success) {
+        setShuffle(!shuffle);
+      }
+    } catch (err: any) {
+      console.error("Error toggling shuffle:", err);
+    } finally {
+      setIsChangingShuffle(false);
+    }
+  };
+
   const handleSongClick = async (song: Song, index: number) => {
     try {
       if (!groupId) return;
@@ -1125,6 +1179,8 @@ const QueuePanel: React.FC = () => {
         playbackStartTimeRef.current = Date.now();
         setIsPlaying(false);
         setShowClearConfirm(false);
+        setRepeatMode("none");
+        setShuffle(false);
       }
     } catch (err: any) {
       // Error handled silently
@@ -1357,7 +1413,6 @@ const QueuePanel: React.FC = () => {
     };
   }, [isResizing, queueHeight, maxQueueHeight]);
 
-
   // UI render and passing a wrapper for onGroupSelect so QueuePanel persists selection whenever user changes it.
   if (loadingGroups) {
     return (
@@ -1472,10 +1527,14 @@ const QueuePanel: React.FC = () => {
             isPlaying={isPlaying}
             currentTime={currentTime}
             volume={volume}
+            repeatMode={repeatMode}
+            shuffle={shuffle}
             isPreviousDisabled={isPreviousDisabled}
             isNextDisabled={isNextDisabled}
             isLoadingNavigation={isLoadingNavigation}
             isPlaybackSeeking={isPlaybackSeeking}
+            isChangingRepeatMode={isChangingRepeatMode}
+            isChangingShuffle={isChangingShuffle}
             onPlayPause={handlePlayPause}
             onPrevious={handlePreviousSong}
             onNext={handleNextSong}
@@ -1484,6 +1543,8 @@ const QueuePanel: React.FC = () => {
             onProgressClick={handleProgressClick}
             onVolumeChange={handleVolumeChange}
             onVolumeChangeEnd={handleVolumeChangeEnd}
+            onRepeatModeChange={handleRepeatModeChange}
+            onShuffleToggle={handleShuffleToggle}
             onAddClick={handleOpenAddPanel}
             formatDuration={formatDuration}
             generatePlaceholderCover={generatePlaceholderCover}

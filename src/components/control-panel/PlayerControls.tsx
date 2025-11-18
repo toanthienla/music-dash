@@ -12,6 +12,8 @@ import {
   Timer,
   Volume2,
   Plus,
+  Repeat,
+  Shuffle,
 } from "lucide-react";
 
 interface Song {
@@ -28,10 +30,14 @@ interface PlayerControlsProps {
   isPlaying: boolean;
   currentTime: number;
   volume: number;
+  repeatMode: "none" | "context" | "all_queue";
+  shuffle: boolean;
   isPreviousDisabled: boolean;
   isNextDisabled: boolean;
   isLoadingNavigation: boolean;
   isPlaybackSeeking: boolean;
+  isChangingRepeatMode?: boolean;
+  isChangingShuffle?: boolean;
   onPlayPause: () => void;
   onPrevious: () => void;
   onNext: () => void;
@@ -40,6 +46,8 @@ interface PlayerControlsProps {
   onProgressClick: (e: React.MouseEvent<HTMLDivElement>) => void;
   onVolumeChange: (volume: number) => void;
   onVolumeChangeEnd: (volume: number) => void;
+  onRepeatModeChange: (mode: "none" | "context" | "all_queue") => void;
+  onShuffleToggle: () => void;
   onAddClick: (tab: "music" | "playlist") => void;
   formatDuration: (ms: number) => string;
   generatePlaceholderCover: (text?: string, size?: number) => string;
@@ -50,10 +58,14 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   isPlaying,
   currentTime,
   volume,
+  repeatMode,
+  shuffle,
   isPreviousDisabled,
   isNextDisabled,
   isLoadingNavigation,
   isPlaybackSeeking,
+  isChangingRepeatMode = false,
+  isChangingShuffle = false,
   onPlayPause,
   onPrevious,
   onNext,
@@ -62,6 +74,8 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   onProgressClick,
   onVolumeChange,
   onVolumeChangeEnd,
+  onRepeatModeChange,
+  onShuffleToggle,
   onAddClick,
   formatDuration,
   generatePlaceholderCover,
@@ -99,9 +113,6 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   const handleProgressBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressBarRef.current) return;
 
-    // We still compute position here, but the actual time update
-    // is handled by the parent via onProgressClick (which sends
-    // the seek request and updates currentTime).
     const rect = progressBarRef.current.getBoundingClientRect();
     const percent = (e.clientX - rect.left) / rect.width;
     const _newTime = percent * currentSong.durationSeconds;
@@ -119,6 +130,50 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
       const newVolume = Number(volumeSliderRef.current.value);
       onVolumeChangeEnd(newVolume);
     }
+  };
+
+  const handleRepeatModeClick = () => {
+    let nextMode: "none" | "context" | "all_queue";
+
+    switch (repeatMode) {
+      case "none":
+        nextMode = "context";
+        break;
+      case "context":
+        nextMode = "all_queue";
+        break;
+      case "all_queue":
+        nextMode = "none";
+        break;
+      default:
+        nextMode = "none";
+    }
+
+    onRepeatModeChange(nextMode);
+  };
+
+  const getRepeatModeLabel = () => {
+    switch (repeatMode) {
+      case "none":
+        return "Repeat Off";
+      case "context":
+        return "Repeat Context";
+      case "all_queue":
+        return "Repeat All Queue";
+      default:
+        return "Repeat";
+    }
+  };
+
+  const getRepeatModeColor = () => {
+    if (repeatMode === "none") {
+      return "text-gray-700";
+    }
+    return "text-[#FF9100]";
+  };
+
+  const getShuffleColor = () => {
+    return shuffle ? "text-[#FF9100]" : "text-gray-700";
   };
 
   return (
@@ -221,19 +276,28 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
       {/* --- Extra Controls --- */}
       <div className="grid grid-cols-4 gap-2 mt-6 mb-4 items-center justify-items-center">
         <button
-          className="hover:opacity-70 transition-opacity"
-          aria-label="Speed"
-          disabled
+          onClick={handleRepeatModeClick}
+          disabled={isChangingRepeatMode}
+          className="hover:opacity-70 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed relative"
+          aria-label={getRepeatModeLabel()}
+          title={getRepeatModeLabel()}
         >
-          <Gauge size={26} className="text-gray-700" />
+          <Repeat size={26} className={getRepeatModeColor()} />
+          {repeatMode !== "none" && (
+            <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#FF9100] text-white text-xs rounded-full flex items-center justify-center font-bold">
+              {repeatMode === "context" ? "1" : "∞"}
+            </span>
+          )}
         </button>
 
         <button
-          className="hover:opacity-70 transition-opacity"
-          aria-label="Sleep timer"
-          disabled
+          onClick={onShuffleToggle}
+          disabled={isChangingShuffle}
+          className="hover:opacity-70 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label="Toggle shuffle"
+          title={shuffle ? "Shuffle: On" : "Shuffle: Off"}
         >
-          <Timer size={26} className="text-gray-700" />
+          <Shuffle size={26} className={getShuffleColor()} />
         </button>
 
         <div className="relative" ref={volumeButtonRef}>
@@ -281,4 +345,4 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   );
 };
 
-export default PlayerControls;  
+export default PlayerControls;
