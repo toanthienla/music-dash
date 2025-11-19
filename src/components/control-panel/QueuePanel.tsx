@@ -1602,6 +1602,7 @@ const QueuePanel: React.FC = () => {
             queueItems={queueItems}
             allSongs={allSongs}
             currentSongIndex={currentSongIndex}
+            groupId={groupId}
             isRemovingContextAtPosition={isRemovingContextAtPosition}
             showClearConfirm={showClearConfirm}
             isClearing={isClearing}

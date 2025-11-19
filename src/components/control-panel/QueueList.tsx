@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { Trash2, ChevronDown, Music } from "lucide-react";
+import { Trash2, ChevronDown, Music, Shuffle } from "lucide-react";
+import axiosClient from "@/utils/axiosClient";
+import { API_URL } from "@/utils/constants";
 
 interface Song {
   id: string;
@@ -24,6 +26,7 @@ interface QueueItem {
   totalDurationMs: number;
   thumbnail?: string;
   tracks: Song[];
+  shuffle_enabled?: boolean;
 }
 
 interface QueueListProps {
@@ -33,7 +36,8 @@ interface QueueListProps {
   isRemovingContextAtPosition: number | null;
   showClearConfirm: boolean;
   isClearing: boolean;
-  queueHeight: number; // New prop for dynamic height
+  queueHeight: number;
+  groupId: string;
   onSongClick: (song: Song, index: number) => void;
   onRemoveContext: (position: number) => void;
   onClearQueueClick: () => void;
@@ -49,7 +53,8 @@ const QueueList: React.FC<QueueListProps> = ({
   isRemovingContextAtPosition,
   showClearConfirm,
   isClearing,
-  queueHeight, // Use the height from props
+  queueHeight,
+  groupId,
   onSongClick,
   onRemoveContext,
   onClearQueueClick,
@@ -58,8 +63,33 @@ const QueueList: React.FC<QueueListProps> = ({
   generatePlaceholderCover,
 }) => {
   const [expandedContextId, setExpandedContextId] = useState<string | null>(null);
+  const [shufflingContextId, setShufflingContextId] = useState<string | null>(null);
+  const [contextShuffleStates, setContextShuffleStates] = useState<Record<string, boolean>>({});
 
   const currentSong = allSongs[currentSongIndex];
+
+  const handleContextShuffle = async (contextId: string, isCurrentlyShuffle: boolean) => {
+    try {
+      setShufflingContextId(contextId);
+
+      const endpoint = isCurrentlyShuffle
+        ? `${API_URL}/api/v1/groups/${groupId}/queue/context/${contextId}/unshuffle`
+        : `${API_URL}/api/v1/groups/${groupId}/queue/context/${contextId}/shuffle`;
+
+      const response = await axiosClient.post(endpoint);
+
+      if (response.data?.success) {
+        setContextShuffleStates((prev) => ({
+          ...prev,
+          [contextId]: !isCurrentlyShuffle,
+        }));
+      }
+    } catch (err: any) {
+      console.error("Error toggling context shuffle:", err);
+    } finally {
+      setShufflingContextId(null);
+    }
+  };
 
   return (
     <>
@@ -114,7 +144,7 @@ const QueueList: React.FC<QueueListProps> = ({
         {/* Queue Items */}
         <div
           className="space-y-1 overflow-y-auto"
-          style={{ height: `${queueHeight}px` }} // Apply dynamic height
+          style={{ height: `${queueHeight}px` }}
         >
           {queueItems.length === 0 ? (
             <div className="flex items-center justify-center py-8 text-center h-full">
@@ -129,10 +159,11 @@ const QueueList: React.FC<QueueListProps> = ({
                 (t) => allSongs.indexOf(t) === currentSongIndex
               );
               const isExpanded = expandedContextId === item.contextId;
+              const isShuffled = contextShuffleStates[item.contextId] ?? item.shuffle_enabled ?? false;
 
               return (
                 <div key={item.contextId}>
-                  {/* Individual Track Item - Make it clickable */}
+                  {/* Individual Track Item */}
                   {item.type === "track" && (
                     <div
                       onClick={() => {
@@ -187,14 +218,11 @@ const QueueList: React.FC<QueueListProps> = ({
                     </div>
                   )}
 
-                  {/* Playlist/Album Header - Make it expandable */}
+                  {/* Playlist/Album Header */}
                   {(item.type === "playlist" || item.type === "album") && (
                     <>
                       <div
-                        onClick={() => {
-                          setExpandedContextId(isExpanded ? null : item.contextId);
-                        }}
-                        className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all cursor-pointer group ${isCurrentContext
+                        className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all group ${isCurrentContext
                           ? "bg-orange-50 border border-orange-200"
                           : "hover:bg-gray-50 border border-transparent"
                           }`}
@@ -214,8 +242,13 @@ const QueueList: React.FC<QueueListProps> = ({
                           </div>
                         </div>
 
-                        {/* Content */}
-                        <div className="min-w-0 flex-1">
+                        {/* Content - Make it expandable */}
+                        <div
+                          onClick={() => {
+                            setExpandedContextId(isExpanded ? null : item.contextId);
+                          }}
+                          className="min-w-0 flex-1 cursor-pointer"
+                        >
                           <p className="text-sm font-medium text-gray-900 truncate">
                             {item.title}
                           </p>
@@ -224,12 +257,42 @@ const QueueList: React.FC<QueueListProps> = ({
                           </p>
                         </div>
 
-                        {/* Chevron for Playlists */}
-                        <ChevronDown
-                          size={16}
-                          className={`text-gray-600 transition-transform flex-shrink-0 ${isExpanded ? "rotate-180" : ""
-                            }`}
-                        />
+                        {/* Shuffle Button for Playlists */}
+                        {item.type === "playlist" && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleContextShuffle(item.contextId, isShuffled);
+                            }}
+                            disabled={shufflingContextId === item.contextId}
+                            className={`p-1.5 rounded transition-all flex-shrink-0 ${isShuffled
+                              ? "text-[#FF9100] bg-orange-50 hover:bg-orange-100"
+                              : "text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+                              } ${shufflingContextId === item.contextId ? "opacity-50" : ""
+                              }`}
+                            title={isShuffled ? "Unshuffle playlist" : "Shuffle playlist"}
+                          >
+                            {shufflingContextId === item.contextId ? (
+                              <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                            ) : (
+                              <Shuffle size={16} />
+                            )}
+                          </button>
+                        )}
+
+                        {/* Chevron for expanding */}
+                        <button
+                          onClick={() => {
+                            setExpandedContextId(isExpanded ? null : item.contextId);
+                          }}
+                          className="p-1 text-gray-600 hover:text-gray-900 transition-colors flex-shrink-0"
+                        >
+                          <ChevronDown
+                            size={16}
+                            className={`transition-transform ${isExpanded ? "rotate-180" : ""
+                              }`}
+                          />
+                        </button>
 
                         {/* Remove Button */}
                         <button
@@ -280,17 +343,23 @@ const QueueList: React.FC<QueueListProps> = ({
                                 {/* Track Info */}
                                 <div className="min-w-0 flex-1">
                                   <p
-                                    className={`text-xs font-medium truncate ${isCurrentTrack ? "text-orange-700" : "text-gray-900"
+                                    className={`text-xs font-medium truncate ${isCurrentTrack
+                                      ? "text-orange-700"
+                                      : "text-gray-900"
                                       }`}
                                   >
                                     {track.title}
                                   </p>
-                                  <p className="text-xs text-gray-500 truncate">{track.artist}</p>
+                                  <p className="text-xs text-gray-500 truncate">
+                                    {track.artist}
+                                  </p>
                                 </div>
 
                                 {/* Duration */}
                                 <span
-                                  className={`text-xs flex-shrink-0 ${isCurrentTrack ? "text-orange-600 font-medium" : "text-gray-400"
+                                  className={`text-xs flex-shrink-0 ${isCurrentTrack
+                                    ? "text-orange-600 font-medium"
+                                    : "text-gray-400"
                                     }`}
                                 >
                                   {track.duration}
