@@ -218,6 +218,8 @@ function generatePlaceholderCover(text?: string, size = 400) {
 const MIN_QUEUE_HEIGHT = 150; // min-h-[150px]
 const ESTIMATED_ITEM_HEIGHT = 56; // Estimated height for one queue context item
 
+type ShuffleMode = "off" | "queue" | "context" | "context+track";
+
 const QueuePanel: React.FC = () => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
@@ -260,7 +262,7 @@ const QueuePanel: React.FC = () => {
   const [isResizing, setIsResizing] = useState<boolean>(false);
   const [repeatMode, setRepeatMode] = useState<"none" | "context" | "all_queue">("none");
   const [isChangingRepeatMode, setIsChangingRepeatMode] = useState<boolean>(false);
-  const [shuffle, setShuffle] = useState<boolean>(false);
+  const [shuffleMode, setShuffleMode] = useState<ShuffleMode>("off");
   const [isChangingShuffle, setIsChangingShuffle] = useState<boolean>(false);
 
   // New: indicate UI is switching groups and loading the queue
@@ -519,7 +521,7 @@ const QueuePanel: React.FC = () => {
       lastSyncTimeRef.current = 0;
       playbackStartTimeRef.current = Date.now();
       setRepeatMode("none");
-      setShuffle(false);
+      setShuffleMode("off");
       return;
     }
 
@@ -611,8 +613,10 @@ const QueuePanel: React.FC = () => {
             setRepeatMode(playbackState.repeat_mode as "none" | "context" | "all_queue");
           }
 
-          // Set shuffle state
-          setShuffle(playbackState.shuffle || false);
+          // Set shuffle mode from backend - default to "off" if not provided
+          // The backend should provide shuffle_mode or shuffle (boolean)
+          // This assumes the backend sends shuffle_mode: "off" | "queue" | "context" | "context+track"
+          setShuffleMode("off");
           return;
         }
 
@@ -624,7 +628,7 @@ const QueuePanel: React.FC = () => {
         lastSyncTimeRef.current = 0;
         playbackStartTimeRef.current = Date.now();
         setRepeatMode("none");
-        setShuffle(false);
+        setShuffleMode("off");
       }
     } catch (playbackErr: any) {
       // On error, reset to first song
@@ -635,7 +639,7 @@ const QueuePanel: React.FC = () => {
       lastSyncTimeRef.current = 0;
       playbackStartTimeRef.current = Date.now();
       setRepeatMode("none");
-      setShuffle(false);
+      setShuffleMode("off");
     }
   };
 
@@ -972,16 +976,37 @@ const QueuePanel: React.FC = () => {
 
       setIsChangingShuffle(true);
 
-      const endpoint = shuffle
-        ? `${API_URL}/api/v1/groups/${groupId}/queue/shuffle/disable`
-        : `${API_URL}/api/v1/groups/${groupId}/queue/shuffle/enable`;
+      // Cycle through shuffle modes: off -> queue -> context -> context+track -> off
+      let nextMode: ShuffleMode;
+      switch (shuffleMode) {
+        case "off":
+          nextMode = "queue";
+          break;
+        case "queue":
+          nextMode = "context";
+          break;
+        case "context":
+          nextMode = "context+track";
+          break;
+        case "context+track":
+          nextMode = "off";
+          break;
+        default:
+          nextMode = "off";
+      }
 
-      const requestBody = shuffle ? {} : { mode: "all_queue" };
+      const endpoint =
+        nextMode === "off"
+          ? `${API_URL}/api/v1/groups/${groupId}/queue/shuffle/disable`
+          : `${API_URL}/api/v1/groups/${groupId}/queue/shuffle/enable`;
+
+      const requestBody =
+        nextMode === "off" ? {} : { mode: nextMode };
 
       const response = await axiosClient.post(endpoint, requestBody);
 
       if (response.data?.success) {
-        setShuffle(!shuffle);
+        setShuffleMode(nextMode);
       }
     } catch (err: any) {
       console.error("Error toggling shuffle:", err);
@@ -1180,7 +1205,7 @@ const QueuePanel: React.FC = () => {
         setIsPlaying(false);
         setShowClearConfirm(false);
         setRepeatMode("none");
-        setShuffle(false);
+        setShuffleMode("off");
       }
     } catch (err: any) {
       // Error handled silently
@@ -1528,7 +1553,7 @@ const QueuePanel: React.FC = () => {
             currentTime={currentTime}
             volume={volume}
             repeatMode={repeatMode}
-            shuffle={shuffle}
+            shuffleMode={shuffleMode}
             isPreviousDisabled={isPreviousDisabled}
             isNextDisabled={isNextDisabled}
             isLoadingNavigation={isLoadingNavigation}

@@ -5,27 +5,53 @@ import Badge from "../ui/badge/Badge";
 import { ArrowDownIcon, Clock, Tick } from "@/icons";
 import { API_URL } from "@/utils/constants";
 
-interface DeviceStats {
-  onlineDevices: number;
-  totalDevices: number;
-  runtime: string;
-  changePercent: number;
+interface DeviceStatistics {
+  total_devices: number;
+  online_devices: number;
+  offline_devices: number;
+  total_runtime_seconds: number;
+  total_runtime_formatted: string;
+  max_runtime_seconds: number;
+  max_runtime_formatted: string;
+  average_runtime_seconds: number;
+  average_runtime_formatted: string;
+}
+
+interface ApiResponse {
+  code: number;
+  message: string;
+  data: DeviceStatistics;
+  success: boolean;
 }
 
 export const EcommerceMetrics = () => {
-  const [stats, setStats] = useState<DeviceStats | null>(null);
+  const [stats, setStats] = useState<DeviceStatistics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await axiosClient.get(`${API_URL}/api/v1/devices/status`, {
-          withCredentials: true,
-        });
-        console.log("Device stats:", res.data.data);
-        setStats(res.data.data[0]);
+        setLoading(true);
+        setError(null);
+
+        const res = await axiosClient.get<ApiResponse>(
+          `${API_URL}/api/v1/devices/statistics`,
+          {
+            withCredentials: true,
+          }
+        );
+
+        console.log("Device statistics:", res.data.data);
+
+        if (res.data.success && res.data.data) {
+          setStats(res.data.data);
+        } else {
+          setError("Failed to fetch device statistics");
+        }
       } catch (err: any) {
         console.error("Failed to fetch device stats:", err.message);
+        setError(err.message || "An error occurred while fetching statistics");
       } finally {
         setLoading(false);
       }
@@ -38,11 +64,19 @@ export const EcommerceMetrics = () => {
     return <p className="text-gray-500 dark:text-gray-400">Loading stats...</p>;
   }
 
+  if (error) {
+    return <p className="text-red-500 dark:text-red-400">Error: {error}</p>;
+  }
+
+  if (!stats) {
+    return <p className="text-gray-500 dark:text-gray-400">No statistics available</p>;
+  }
+
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-6">
       {/* <!-- Metric 1: Devices Online --> */}
       <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
-        <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl">
+        <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl dark:bg-gray-800">
           <Tick className="text-gray-800 w-12 h-12 dark:text-white/90" />
         </div>
 
@@ -52,15 +86,16 @@ export const EcommerceMetrics = () => {
               Total number of devices online
             </span>
             <h4 className="mt-2 font-bold text-gray-800 text-title-sm dark:text-white/90">
-              {stats
-                ? `${stats.onlineDevices}/${stats.totalDevices}`
-                : "N/A"}
+              {`${stats.online_devices}/${stats.total_devices}`}
             </h4>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {stats.offline_devices} offline
+            </p>
           </div>
         </div>
       </div>
 
-      {/* <!-- Metric 2: Runtime --> */}
+      {/* <!-- Metric 2: Total Runtime --> */}
       <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
         <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl dark:bg-gray-800">
           <Clock className="text-gray-800 w-12 h-12 dark:text-white/90" />
@@ -74,24 +109,21 @@ export const EcommerceMetrics = () => {
 
             <div className="mt-2 flex items-center gap-2">
               <h4 className="font-bold text-gray-800 text-title-sm dark:text-white/90 whitespace-nowrap">
-                {stats?.runtime || "00:00:00"}
+                {stats.total_runtime_formatted}
               </h4>
 
-              <Badge color={stats?.changePercent && stats.changePercent < 0 ? "success" : "warning"}>
+              <Badge color="info">
                 <div className="flex items-center gap-1 whitespace-nowrap">
-                  <ArrowDownIcon className="text-success-500 w-4 h-4" />
-                  <span>
-                    {stats?.changePercent
-                      ? `${stats.changePercent.toFixed(2)}%`
-                      : "0%"}
+                  <span className="text-xs">
+                    Max: {stats.max_runtime_formatted}
                   </span>
                 </div>
               </Badge>
-
-              <p className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                Vs last time
-              </p>
             </div>
+
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              Avg: {stats.average_runtime_formatted}
+            </p>
           </div>
         </div>
       </div>

@@ -8,8 +8,6 @@ import {
   SkipForward,
   RotateCcw,
   RotateCw,
-  Gauge,
-  Timer,
   Volume2,
   Plus,
   Repeat,
@@ -25,13 +23,15 @@ interface Song {
   cover: string;
 }
 
+type ShuffleMode = "off" | "queue" | "context" | "context+track";
+
 interface PlayerControlsProps {
   currentSong: Song;
   isPlaying: boolean;
   currentTime: number;
   volume: number;
   repeatMode: "none" | "context" | "all_queue";
-  shuffle: boolean;
+  shuffleMode: ShuffleMode;
   isPreviousDisabled: boolean;
   isNextDisabled: boolean;
   isLoadingNavigation: boolean;
@@ -59,7 +59,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   currentTime,
   volume,
   repeatMode,
-  shuffle,
+  shuffleMode,
   isPreviousDisabled,
   isNextDisabled,
   isLoadingNavigation,
@@ -172,8 +172,39 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
     return "text-[#FF9100]";
   };
 
-  const getShuffleColor = () => {
-    return shuffle ? "text-[#FF9100]" : "text-gray-700";
+  const getShuffleModeLabel = () => {
+    switch (shuffleMode) {
+      case "off":
+        return "Shuffle Off";
+      case "queue":
+        return "Shuffle Queue";
+      case "context":
+        return "Shuffle Context";
+      case "context+track":
+        return "Shuffle Context + Track";
+      default:
+        return "Shuffle";
+    }
+  };
+
+  const getShuffleModeColor = () => {
+    if (shuffleMode === "off") {
+      return "text-gray-700";
+    }
+    return "text-[#FF9100]";
+  };
+
+  const getShuffleModeIndicator = () => {
+    switch (shuffleMode) {
+      case "queue":
+        return "Q";
+      case "context":
+        return "C";
+      case "context+track":
+        return "CT";
+      default:
+        return null;
+    }
   };
 
   return (
@@ -293,11 +324,16 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
         <button
           onClick={onShuffleToggle}
           disabled={isChangingShuffle}
-          className="hover:opacity-70 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label="Toggle shuffle"
-          title={shuffle ? "Shuffle: On" : "Shuffle: Off"}
+          className="hover:opacity-70 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed relative"
+          aria-label={getShuffleModeLabel()}
+          title={getShuffleModeLabel()}
         >
-          <Shuffle size={26} className={getShuffleColor()} />
+          <Shuffle size={26} className={getShuffleModeColor()} />
+          {shuffleMode !== "off" && (
+            <span className="absolute -bottom-1 -right-1 px-1 py-0.5 bg-[#FF9100] text-white text-xs rounded-full flex items-center justify-center font-bold whitespace-nowrap">
+              {getShuffleModeIndicator()}
+            </span>
+          )}
         </button>
 
         <div className="relative" ref={volumeButtonRef}>
