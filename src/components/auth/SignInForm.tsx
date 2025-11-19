@@ -53,20 +53,17 @@ export default function SignInForm() {
     try {
       const emailTrimmed = email.trim();
 
-      // Validate inputs
+      // Validate
       if (!emailTrimmed) {
         setError("Email is required");
         setLoading(false);
         return;
       }
-
       if (!password) {
         setError("Password is required");
         setLoading(false);
         return;
       }
-
-      // Email validation
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(emailTrimmed)) {
         setError("Please enter a valid email");
@@ -74,47 +71,38 @@ export default function SignInForm() {
         return;
       }
 
-      // Backend expects top-level email/password fields
-      const payload = {
-        email: emailTrimmed,
-        password: password,
-      };
+      const payload = { email: emailTrimmed, password };
 
       const response = await axiosClient.post<LoginResponse>(
         `${API_URL}/api/v1/auth/login`,
         payload
       );
 
-      // Prefer access_token but fall back to token if present
+      // Prefer access_token, fallback to token
       const accessToken =
         response.data?.data?.access_token ?? response.data?.data?.token;
-      const refreshToken = response.data?.data?.refresh_token;
 
       if (response.data?.success && accessToken) {
-        // Persist tokens
+        // Save ONLY access token
         localStorage.setItem("access_token", accessToken);
-        if (refreshToken) {
-          localStorage.setItem("refresh_token", refreshToken);
-        }
 
-        // Persist user if returned
+        // Save user if returned
         if (response.data.data?.user) {
           localStorage.setItem("user", JSON.stringify(response.data.data.user));
         }
 
-        // Remember me preference
+        // Remember me
         if (isChecked) {
           localStorage.setItem("rememberMe", "true");
         } else {
           localStorage.removeItem("rememberMe");
         }
 
-        // Clear form state and force Input re-mount to clear defaultValue
+        // Reset form
         setEmail("");
         setPassword("");
-        setResetKey((k) => k + 1);
+        setResetKey((prev) => prev + 1);
 
-        // Redirect to dashboard
         router.push("/controlpanel");
       } else {
         setError(response.data?.message || "Login failed");
@@ -123,19 +111,12 @@ export default function SignInForm() {
       console.error("Login error:", err);
 
       const status = err?.response?.status;
-      const respMsg = err?.response?.data?.message;
+      const msg = err?.response?.data?.message;
 
-      if (status === 401) {
-        setError("Invalid email or password");
-      } else if (status === 400) {
-        setError(respMsg || "Invalid request");
-      } else if (respMsg) {
-        setError(respMsg);
-      } else if (err?.message) {
-        setError(err.message);
-      } else {
-        setError("An error occurred during login. Please try again.");
-      }
+      if (status === 401) setError("Invalid email or password");
+      else if (status === 400) setError(msg || "Invalid request");
+      else if (msg) setError(msg);
+      else setError("An error occurred during login. Please try again.");
     } finally {
       setLoading(false);
     }
