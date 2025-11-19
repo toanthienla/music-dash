@@ -135,10 +135,14 @@ export const GroupDeviceManager: React.FC<GroupDeviceManagerProps> = ({
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [removeSuccess, setRemoveSuccess] = useState<string | null>(null);
 
-  // Get available devices to add (not already in group)
+  // Get available devices to add (not already in group and not assigned to another group)
   const getAvailableDevices = (): AvailableDevice[] => {
     return allAvailableDevices.filter(
-      (available) => !devices.some((d) => d.id === available.id)
+      (available) =>
+        !devices.some((d) => d.id === available.id) &&
+        // Only treat as available those devices that are NOT already assigned to a group
+        // deviceGroupId may be undefined/null/empty — treat any truthy value as "already in a group"
+        !available.deviceGroupId
     );
   };
 
