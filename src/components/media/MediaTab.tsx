@@ -2,7 +2,7 @@
 
 import React from "react";
 import axiosClient from "@/utils/axiosClient";
-import { TEKNIX_USER_SESSION_TOKEN, API_URL } from "@/utils/constants";
+import { API_URL } from "@/utils/constants";
 import { Modal } from "../ui/modal";
 import DropzoneMp3 from "@/components/form/form-elements/DropZoneMp3";
 import DropzoneImage from "@/components/form/form-elements/DropzoneImage";
@@ -38,7 +38,6 @@ type EditingMusic = Music & {
 
 const MUSIC_API_URL = `${API_URL}/api/v1/music`;
 const MUSIC_UPLOAD_API_URL = `${API_URL}/api/v1/music/upload`;
-const QUEUE_API_URL = `${API_URL}/api/v1/sessions/${TEKNIX_USER_SESSION_TOKEN}/queue`;
 
 function formatDuration(seconds: number) {
   if (!seconds || isNaN(seconds)) return "00:00";
@@ -112,43 +111,26 @@ export default function MediaTab() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
-  const [addingToQueue, setAddingToQueue] = React.useState(false);
 
   const [isPlaying, setIsPlaying] = React.useState(false);
   const [currentPlayingId, setCurrentPlayingId] = React.useState<string | null>(null);
 
-  // Close dropdown when clicking outside
-  React.useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (!target.closest('[data-menu-container]')) {
-        setOpenMenuId(null);
-      }
-    };
-
-    if (openMenuId) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => {
-        document.removeEventListener("mousedown", handleClickOutside);
-      };
-    }
-  }, [openMenuId]);
-
-  // Fetch music list with pagination
-  React.useEffect(() => {
-    let canceled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
+  // Centralized fetch function so we can call it after upload/update/delete
+  const fetchMusic = React.useCallback(
+    async (page: number) => {
+      let canceled = false;
       try {
-        // Add page and pageSize as query parameters
+        setLoading(true);
+        setError(null);
+
         const response = await axiosClient.get(MUSIC_API_URL, {
           params: {
-            page: currentPage,
-            pageSize: pageSize,
+            page,
+            pageSize,
             ...(searchTerm && { query: searchTerm }),
           },
         });
+
         const raw = response.data;
 
         if (!raw?.success || !raw?.data?.data || !Array.isArray(raw.data.data)) {
@@ -170,7 +152,6 @@ export default function MediaTab() {
 
         if (!canceled) {
           setMusic(formatted);
-          // Set total items from API response
           setTotalItems(raw.data.total || 0);
         }
       } catch (err: any) {
@@ -182,11 +163,37 @@ export default function MediaTab() {
       } finally {
         if (!canceled) setLoading(false);
       }
-    })();
-    return () => {
-      canceled = true;
+
+      // return a cleanup handle (though not strictly necessary here)
+      return () => {
+        canceled = true;
+      };
+    },
+    [pageSize, searchTerm]
+  );
+
+  // Fetch music list when page/search/pageSize change
+  React.useEffect(() => {
+    fetchMusic(currentPage);
+    // fetchMusic is stable with useCallback deps
+  }, [currentPage, fetchMusic]);
+
+  // Close dropdown when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('[data-menu-container]')) {
+        setOpenMenuId(null);
+      }
     };
-  }, [currentPage, pageSize, searchTerm]);
+
+    if (openMenuId) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+      };
+    }
+  }, [openMenuId]);
 
   const resetForm = () => {
     setMediaForm({ title: "" });
@@ -217,30 +224,6 @@ export default function MediaTab() {
       audio.pause();
       setIsPlaying(false);
       setCurrentPlayingId(null);
-    }
-  };
-
-  const handleAddSelectedToQueue = async () => {
-    if (selectedIds.size === 0) return;
-    try {
-      setAddingToQueue(true);
-      const musicIds = Array.from(selectedIds);
-
-      const response = await axiosClient.post(QUEUE_API_URL, {
-        music_ids: musicIds,
-      });
-
-      if (response.data?.success) {
-        alert(`${musicIds.length} music added to queue successfully!`);
-        setSelectedIds(new Set());
-      } else {
-        alert("Failed to add music to queue. Please try again.");
-      }
-    } catch (error: any) {
-      console.error("Error adding music to queue:", error);
-      alert(error?.response?.data?.message || "Failed to add music to queue. Please try again.");
-    } finally {
-      setAddingToQueue(false);
     }
   };
 
@@ -278,11 +261,18 @@ export default function MediaTab() {
       });
 
       if (response.data?.success) {
-        // Reset to first page to see newly added music
-        setCurrentPage(1);
+        // show success, close modal, reset form
         setIsAddOpen(false);
         resetForm();
         alert("Music uploaded successfully!");
+
+        // Ensure the UI reflects the newly uploaded music.
+        // Move to first page and re-fetch page 1 explicitly so upload is visible immediately.
+        setCurrentPage(1);
+        // fetch page 1 explicitly (don't rely on effect if currentPage was already 1)
+        await fetchMusic(1);
+      } else {
+        alert(response.data?.message || "Failed to upload music");
       }
     } catch (error: any) {
       console.error("Error saving music:", error);
@@ -338,11 +328,14 @@ export default function MediaTab() {
       });
 
       if (response.data?.success) {
-        // Refresh current page data
-        setCurrentPage(currentPage);
         setIsEditOpen(false);
         resetEditForm();
         alert("Music updated successfully!");
+
+        // Re-fetch current page so changes are reflected
+        await fetchMusic(currentPage);
+      } else {
+        alert(response.data?.message || "Failed to update music");
       }
     } catch (error: any) {
       console.error("Error updating music:", error);
@@ -357,11 +350,18 @@ export default function MediaTab() {
 
     try {
       await axiosClient.delete(`${MUSIC_API_URL}/${musicId}`);
-      const newMusic = music.filter((s) => s.id !== musicId);
-      setMusic(newMusic);
-      setTotalItems(Math.max(0, totalItems - 1));
-      setOpenMenuId(null);
       alert("Music deleted successfully!");
+
+      // After deletion, re-fetch the current page. The server will return updated total/items.
+      // If current page becomes empty, you may want to navigate to the previous page.
+      // We'll fetch current page; if it's empty and totalPages is lower, effect or subsequent logic can adjust.
+      const newTotal = Math.max(0, totalItems - 1);
+      const newTotalPages = Math.max(1, Math.ceil(newTotal / pageSize));
+      const pageToFetch = Math.min(currentPage, newTotalPages);
+      setCurrentPage(pageToFetch);
+      await fetchMusic(pageToFetch);
+
+      setOpenMenuId(null);
     } catch (error: any) {
       console.error("Error deleting music:", error);
       alert(error?.response?.data?.message || "Failed to delete music. Please try again.");
@@ -370,20 +370,23 @@ export default function MediaTab() {
 
   const handleDeleteSelected = async () => {
     if (!selectedIds.size) return;
+    if (!confirm(`Are you sure you want to delete ${selectedIds.size} selected music item(s)?`)) return;
+
     try {
-      for (const musicId of Array.from(selectedIds)) {
+      const ids = Array.from(selectedIds);
+      for (const musicId of ids) {
         await axiosClient.delete(`${MUSIC_API_URL}/${musicId}`);
       }
 
-      const newMusic = music.filter((s) => !selectedIds.has(s.id));
-      setMusic(newMusic);
-      setTotalItems(Math.max(0, totalItems - selectedIds.size));
-      setSelectedIds(new Set());
-
-      const newTotalPages = Math.max(1, Math.ceil((totalItems - selectedIds.size) / pageSize));
-      if (currentPage > newTotalPages) setCurrentPage(newTotalPages);
-
       alert("Music deleted successfully!");
+
+      // Adjust page if needed (compute new total and pages)
+      const newTotal = Math.max(0, totalItems - ids.length);
+      const newTotalPages = Math.max(1, Math.ceil(newTotal / pageSize));
+      const pageToFetch = Math.min(currentPage, newTotalPages);
+      setSelectedIds(new Set());
+      setCurrentPage(pageToFetch);
+      await fetchMusic(pageToFetch);
     } catch (error: any) {
       console.error("Error deleting music:", error);
       alert(error?.response?.data?.message || "Failed to delete music. Please try again.");
@@ -441,27 +444,6 @@ export default function MediaTab() {
               <path d="M7.91745 11.525C6.49762 11.525 5.34662 12.676 5.34662 14.0959C5.34661 15.5157 6.49762 16.6667 7.91745 16.6667C9.33728 16.6667 10.4883 15.5157 10.4883 14.0959C10.4883 12.676 9.33728 11.525 7.91745 11.525Z" strokeWidth="1.5" />
             </svg>
             Filter
-          </button>
-
-          {/* Add to queue button */}
-          <button
-            onClick={handleAddSelectedToQueue}
-            disabled={selectedIds.size === 0 || addingToQueue}
-            className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${selectedIds.size === 0 || addingToQueue
-              ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
-              : "border-brand-300 bg-brand-50 text-brand-600 hover:bg-brand-100 hover:border-brand-400 hover:text-brand-700 active:bg-brand-200 shadow-sm hover:shadow-md"
-              }`}
-          >
-            {addingToQueue ? (
-              <>
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 animate-spin" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M4.293 5.293a1 1 0 011.414 0A7 7 0 1015.707 4.293a1 1 0 11-1.414 1.414A5 5 0 005.707 6.707a1 1 0 01-1.414-1.414z" clipRule="evenodd" />
-                </svg>
-                Adding...
-              </>
-            ) : (
-              "Add to Queue"
-            )}
           </button>
 
           {/* Delete button */}

@@ -110,38 +110,22 @@ export default function PlaylistTab() {
   const [error, setError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
 
-  // Close menu when clicking outside
-  React.useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (!target.closest('[data-menu-container]')) {
-        setOpenMenuId(null);
-      }
-    };
-
-    if (openMenuId) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => {
-        document.removeEventListener("mousedown", handleClickOutside);
-      };
-    }
-  }, [openMenuId]);
-
-  // Fetch playlists with pagination
-  React.useEffect(() => {
-    let canceled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
+  // Centralized fetch so we can call it after create/update/delete
+  const fetchPlaylists = React.useCallback(
+    async (page: number) => {
+      let canceled = false;
       try {
-        // Add page and pageSize as query parameters
+        setLoading(true);
+        setError(null);
+
         const response = await axiosClient.get(PLAYLISTS_API_URL, {
           params: {
-            page: currentPage,
-            pageSize: pageSize,
+            page,
+            pageSize,
             ...(searchTerm && { query: searchTerm }),
           },
         });
+
         const raw = response.data;
 
         if (!raw?.success || !raw?.data?.data || !Array.isArray(raw.data.data)) {
@@ -163,7 +147,6 @@ export default function PlaylistTab() {
 
         if (!canceled) {
           setPlaylists(formatted);
-          // Set total items from API response
           setTotalItems(raw.data.total || 0);
         }
       } catch (err: any) {
@@ -175,11 +158,35 @@ export default function PlaylistTab() {
       } finally {
         if (!canceled) setLoading(false);
       }
-    })();
-    return () => {
-      canceled = true;
+
+      return () => {
+        canceled = true;
+      };
+    },
+    [pageSize, searchTerm]
+  );
+
+  // Fetch playlists on mount / when currentPage or searchTerm changes
+  React.useEffect(() => {
+    fetchPlaylists(currentPage);
+  }, [currentPage, fetchPlaylists]);
+
+  // Close menu when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('[data-menu-container]')) {
+        setOpenMenuId(null);
+      }
     };
-  }, [currentPage, pageSize, searchTerm]);
+
+    if (openMenuId) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+      };
+    }
+  }, [openMenuId]);
 
   const resetForm = () => {
     setPlaylistForm({ name: "", description: "", isPublic: false });
@@ -220,11 +227,15 @@ export default function PlaylistTab() {
       });
 
       if (response.data?.success) {
-        // Reset to first page to see newly added playlist
-        setCurrentPage(1);
+        // Close modal, reset form, then re-fetch page 1 so new playlist appears immediately
         setIsAddOpen(false);
         resetForm();
         alert("Playlist created successfully!");
+
+        setCurrentPage(1);
+        await fetchPlaylists(1);
+      } else {
+        alert(response.data?.message || "Failed to create playlist");
       }
     } catch (error: any) {
       console.error("Error saving playlist:", error);
@@ -268,7 +279,6 @@ export default function PlaylistTab() {
         formData.append("coverFile", editCoverFile);
       }
 
-      // Set removeCover = true only if user removed the image from dropzone
       if (removeCover) {
         formData.append("removeCover", String(true));
       }
@@ -284,11 +294,14 @@ export default function PlaylistTab() {
       );
 
       if (response.data?.success) {
-        // Refresh current page data
-        setCurrentPage(currentPage);
         setIsEditOpen(false);
         resetEditForm();
         alert("Playlist updated successfully!");
+
+        // Re-fetch current page to reflect changes
+        await fetchPlaylists(currentPage);
+      } else {
+        alert(response.data?.message || "Failed to update playlist");
       }
     } catch (error: any) {
       console.error("Error updating playlist:", error);
@@ -303,11 +316,16 @@ export default function PlaylistTab() {
 
     try {
       await axiosClient.delete(`${PLAYLISTS_API_URL}/${playlistId}`);
-      const newPlaylists = playlists.filter((p) => p.id !== playlistId);
-      setPlaylists(newPlaylists);
-      setTotalItems(Math.max(0, totalItems - 1));
-      setOpenMenuId(null);
       alert("Playlist deleted successfully!");
+
+      // Compute new total/pages and fetch appropriate page
+      const newTotal = Math.max(0, totalItems - 1);
+      const newTotalPages = Math.max(1, Math.ceil(newTotal / pageSize));
+      const pageToFetch = Math.min(currentPage, newTotalPages);
+      setCurrentPage(pageToFetch);
+      await fetchPlaylists(pageToFetch);
+
+      setOpenMenuId(null);
     } catch (error: any) {
       console.error("Error deleting playlist:", error);
       alert(error?.response?.data?.message || "Failed to delete playlist. Please try again.");
@@ -316,20 +334,23 @@ export default function PlaylistTab() {
 
   const handleDeleteSelected = async () => {
     if (!selectedIds.size) return;
+    if (!confirm(`Are you sure you want to delete ${selectedIds.size} selected playlist(s)?`)) return;
+
     try {
-      for (const playlistId of Array.from(selectedIds)) {
+      const ids = Array.from(selectedIds);
+      for (const playlistId of ids) {
         await axiosClient.delete(`${PLAYLISTS_API_URL}/${playlistId}`);
       }
 
-      const newPlaylists = playlists.filter((p) => !selectedIds.has(p.id));
-      setPlaylists(newPlaylists);
-      setTotalItems(Math.max(0, totalItems - selectedIds.size));
+      alert("Playlist(s) deleted successfully!");
+
+      const newTotal = Math.max(0, totalItems - ids.length);
+      const newTotalPages = Math.max(1, Math.ceil(newTotal / pageSize));
+      const pageToFetch = Math.min(currentPage, newTotalPages);
+
       setSelectedIds(new Set());
-
-      const newTotalPages = Math.max(1, Math.ceil((totalItems - selectedIds.size) / pageSize));
-      if (currentPage > newTotalPages) setCurrentPage(newTotalPages);
-
-      alert("Playlist deleted successfully!");
+      setCurrentPage(pageToFetch);
+      await fetchPlaylists(pageToFetch);
     } catch (error: any) {
       console.error("Error deleting playlists:", error);
       alert(error?.response?.data?.message || "Failed to delete playlist. Please try again.");
@@ -686,7 +707,6 @@ export default function PlaylistTab() {
                         reader.readAsDataURL(file);
                       } else {
                         // User removed image from dropzone
-                        // Set removeCover = true when dropzone is cleared
                         setEditCoverFile(null);
                         setEditCoverPreview(null);
                         setRemoveCover(true);
