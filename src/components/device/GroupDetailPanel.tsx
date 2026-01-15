@@ -119,7 +119,7 @@ export const GroupDetailPanel: React.FC<GroupDetailPanelProps> = ({
 
     try {
       const response = await axiosClient.get<ApiResponse<ApiGroupData>>(
-        `${API_URL}/api/v1/groups/${groupId}`
+        `${API_URL}/groups/${groupId}`
       );
 
       if (!response.data.success) {

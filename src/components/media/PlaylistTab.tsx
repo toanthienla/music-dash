@@ -33,7 +33,7 @@ type EditingPlaylist = Playlist & {
   removeCover?: boolean;
 };
 
-const PLAYLISTS_API_URL = `${API_URL}/api/v1/playlists`;
+const PLAYLISTS_API_URL = `${API_URL}/playlists`;
 
 function pickColorForText(text?: string) {
   const palette = [

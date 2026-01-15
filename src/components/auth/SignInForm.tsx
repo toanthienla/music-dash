@@ -74,13 +74,14 @@ export default function SignInForm() {
       const payload = { email: emailTrimmed, password };
 
       const response = await axiosClient.post<LoginResponse>(
-        `${API_URL}/api/v1/auth/login`,
+        `${API_URL}/auth/login`,
         payload
       );
 
       // Prefer access_token, fallback to token
       const accessToken =
         response.data?.data?.access_token ?? response.data?.data?.token;
+      console.log(accessToken);
 
       if (response.data?.success && accessToken) {
         // Save ONLY access token

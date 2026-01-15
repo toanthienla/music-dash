@@ -312,7 +312,7 @@ const QueuePanel: React.FC = () => {
     const fetchGroups = async () => {
       try {
         setLoadingGroups(true);
-        const response = await axiosClient.get(`${API_URL}/api/v1/groups`);
+        const response = await axiosClient.get(`${API_URL}/groups`);
 
         if (response.data?.success && response.data?.data) {
           const groupsList: Group[] = response.data.data;
@@ -527,7 +527,7 @@ const QueuePanel: React.FC = () => {
 
     try {
       const playbackResponse = await axiosClient.get(
-        `${API_URL}/api/v1/groups/${groupId}/playback/state`
+        `${API_URL}/groups/${groupId}/playback/state`
       );
 
       if (playbackResponse.data?.success && playbackResponse.data?.data) {
@@ -652,7 +652,7 @@ const QueuePanel: React.FC = () => {
         setError(null);
 
         const queueResponse = await axiosClient.get(
-          `${API_URL}/api/v1/groups/${groupId}/queue`
+          `${API_URL}/groups/${groupId}/queue`
         );
 
         if (queueResponse.data?.success && queueResponse.data?.data) {
@@ -685,7 +685,7 @@ const QueuePanel: React.FC = () => {
   const fetchAvailableMusic = useCallback(async () => {
     try {
       setLoadingMusic(true);
-      const response = await axiosClient.get(`${API_URL}/api/v1/music`);
+      const response = await axiosClient.get(`${API_URL}/music`);
 
       if (response.data?.success && response.data?.data?.data) {
         setAvailableMusic(response.data.data.data);
@@ -700,7 +700,7 @@ const QueuePanel: React.FC = () => {
   const fetchAvailablePlaylists = useCallback(async () => {
     try {
       setLoadingPlaylists(true);
-      const response = await axiosClient.get(`${API_URL}/api/v1/playlists`);
+      const response = await axiosClient.get(`${API_URL}/playlists`);
 
       if (response.data?.success && response.data?.data?.data) {
         const playlists = response.data.data.data.map((p: any) => ({
@@ -775,12 +775,12 @@ const QueuePanel: React.FC = () => {
 
       if (isPlaying) {
         await axiosClient.post(
-          `${API_URL}/api/v1/groups/${groupId}/playback/pause`
+          `${API_URL}/groups/${groupId}/playback/pause`
         );
         setIsPlaying(false);
       } else {
         await axiosClient.post(
-          `${API_URL}/api/v1/groups/${groupId}/playback/play`
+          `${API_URL}/groups/${groupId}/playback/play`
         );
         setIsPlaying(true);
         // when resuming, reset timing reference so interval continues from currentTime
@@ -803,7 +803,7 @@ const QueuePanel: React.FC = () => {
       setIsLoadingNavigation(true);
 
       await axiosClient.post(
-        `${API_URL}/api/v1/groups/${groupId}/playback/next`
+        `${API_URL}/groups/${groupId}/playback/next`
       );
 
       const nextIndex = currentSongIndex + 1;
@@ -833,7 +833,7 @@ const QueuePanel: React.FC = () => {
       setIsLoadingNavigation(true);
 
       await axiosClient.post(
-        `${API_URL}/api/v1/groups/${groupId}/playback/previous`
+        `${API_URL}/groups/${groupId}/playback/previous`
       );
 
       const prevIndex = currentSongIndex - 1;
@@ -860,7 +860,7 @@ const QueuePanel: React.FC = () => {
       setIsPlaybackSeeking(true);
 
       await axiosClient.post(
-        `${API_URL}/api/v1/groups/${groupId}/playback/seek-relative`,
+        `${API_URL}/groups/${groupId}/playback/seek-relative`,
         { offset_ms: -10000 }
       );
 
@@ -888,7 +888,7 @@ const QueuePanel: React.FC = () => {
       );
 
       await axiosClient.post(
-        `${API_URL}/api/v1/groups/${groupId}/playback/seek-relative`,
+        `${API_URL}/groups/${groupId}/playback/seek-relative`,
         { offset_ms: 10000 }
       );
 
@@ -917,7 +917,7 @@ const QueuePanel: React.FC = () => {
 
       // Send seek request
       await axiosClient.post(
-        `${API_URL}/api/v1/groups/${groupId}/playback/seek`,
+        `${API_URL}/groups/${groupId}/playback/seek`,
         { position_ms: newPositionMs }
       );
 
@@ -942,7 +942,7 @@ const QueuePanel: React.FC = () => {
       if (!groupId) return;
 
       await axiosClient.post(
-        `${API_URL}/api/v1/groups/${groupId}/playback/volume`,
+        `${API_URL}/groups/${groupId}/playback/volume`,
         { volume: newVolume }
       );
     } catch (err: any) {
@@ -958,7 +958,7 @@ const QueuePanel: React.FC = () => {
 
       // Send the EXACT mode to backend - no mapping!
       await axiosClient.post(
-        `${API_URL}/api/v1/groups/${groupId}/playback/repeat`,
+        `${API_URL}/groups/${groupId}/playback/repeat`,
         { repeat_mode: mode }
       );
 
@@ -997,8 +997,8 @@ const QueuePanel: React.FC = () => {
 
       const endpoint =
         nextMode === "off"
-          ? `${API_URL}/api/v1/groups/${groupId}/queue/shuffle/disable`
-          : `${API_URL}/api/v1/groups/${groupId}/queue/shuffle/enable`;
+          ? `${API_URL}/groups/${groupId}/queue/shuffle/disable`
+          : `${API_URL}/groups/${groupId}/queue/shuffle/enable`;
 
       const requestBody =
         nextMode === "off" ? {} : { mode: nextMode };
@@ -1073,7 +1073,7 @@ const QueuePanel: React.FC = () => {
       }
 
       const response = await axiosClient.post(
-        `${API_URL}/api/v1/groups/${groupId}/playback/play-at-position`,
+        `${API_URL}/groups/${groupId}/playback/play-at-position`,
         {
           queue_position: queuePosition,
           track_index: trackIndex,
@@ -1126,7 +1126,7 @@ const QueuePanel: React.FC = () => {
       if (selectedMusicIds.size > 0) {
         const musicIds = Array.from(selectedMusicIds);
         const response = await axiosClient.post(
-          `${API_URL}/api/v1/groups/${groupId}/queue/tracks`,
+          `${API_URL}/groups/${groupId}/queue/tracks`,
           { music_ids: musicIds, position: "end" }
         );
 
@@ -1139,7 +1139,7 @@ const QueuePanel: React.FC = () => {
         const playlistIds = Array.from(selectedPlaylistIds);
         for (const playlistId of playlistIds) {
           const response = await axiosClient.post(
-            `${API_URL}/api/v1/groups/${groupId}/queue/playlist`,
+            `${API_URL}/groups/${groupId}/queue/playlist`,
             {
               playlist_id: playlistId,
               position: "end",
@@ -1154,7 +1154,7 @@ const QueuePanel: React.FC = () => {
       }
 
       const queueResponse = await axiosClient.get(
-        `${API_URL}/api/v1/groups/${groupId}/queue`
+        `${API_URL}/groups/${groupId}/queue`
       );
 
       if (queueResponse.data?.success && queueResponse.data?.data) {
@@ -1187,12 +1187,12 @@ const QueuePanel: React.FC = () => {
       setIsClearing(true);
 
       const response = await axiosClient.delete(
-        `${API_URL}/api/v1/groups/${groupId}/queue`
+        `${API_URL}/groups/${groupId}/queue`
       );
 
       if (response.data?.success) {
         await axiosClient.post(
-          `${API_URL}/api/v1/groups/${groupId}/playback/stop`
+          `${API_URL}/groups/${groupId}/playback/stop`
         );
 
         setQueueItems([]);
@@ -1224,12 +1224,12 @@ const QueuePanel: React.FC = () => {
         const contextId = queueItems[position].contextId;
 
         const response = await axiosClient.delete(
-          `${API_URL}/api/v1/groups/${groupId}/queue/context/${contextId}`
+          `${API_URL}/groups/${groupId}/queue/context/${contextId}`
         );
 
         if (response.data?.success) {
           const queueResponse = await axiosClient.get(
-            `${API_URL}/api/v1/groups/${groupId}/queue`
+            `${API_URL}/groups/${groupId}/queue`
           );
 
           if (queueResponse.data?.success && queueResponse.data?.data) {
@@ -1280,7 +1280,7 @@ const QueuePanel: React.FC = () => {
 
     try {
       const playbackResponse = await axiosClient.get(
-        `${API_URL}/api/v1/groups/${groupId}/playback/state`
+        `${API_URL}/groups/${groupId}/playback/state`
       );
 
       if (!playbackResponse.data?.success || !playbackResponse.data?.data) {

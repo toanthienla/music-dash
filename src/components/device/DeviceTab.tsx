@@ -237,7 +237,7 @@ const RegisterDeviceModal: React.FC<RegisterDeviceModalProps> = ({
 
     try {
       const response = await axiosClient.post<ApiResponse<any>>(
-        `${API_URL}/api/v1/devices/register`,
+        `${API_URL}/devices/register`,
         formData
       );
 
@@ -493,7 +493,7 @@ export default function DeviceTab() {
     setLoading(true);
     setFetchError(null);
     try {
-      const endpoint = `${API_URL}/api/v1/devices/music/list`;
+      const endpoint = `${API_URL}/devices/music/list`;
 
       console.log(`[Devices] Fetching from: ${endpoint}`);
 

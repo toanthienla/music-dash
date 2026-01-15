@@ -73,8 +73,8 @@ const QueueList: React.FC<QueueListProps> = ({
       setShufflingContextId(contextId);
 
       const endpoint = isCurrentlyShuffle
-        ? `${API_URL}/api/v1/groups/${groupId}/queue/context/${contextId}/unshuffle`
-        : `${API_URL}/api/v1/groups/${groupId}/queue/context/${contextId}/shuffle`;
+        ? `${API_URL}/groups/${groupId}/queue/context/${contextId}/unshuffle`
+        : `${API_URL}/groups/${groupId}/queue/context/${contextId}/shuffle`;
 
       const response = await axiosClient.post(endpoint);
 

@@ -4,17 +4,18 @@ import { ACCESS_TOKEN, PROXY_ACCESS_TOKEN } from "@/utils/constants";
 const axiosClient = axios.create();
 
 axiosClient.interceptors.request.use((config) => {
+  const localAccessToken = localStorage.getItem("access_token");
   if (ACCESS_TOKEN) {
     config.headers.Authorization = `Bearer ${ACCESS_TOKEN}`;
   }
 
-  const localProxyToken = localStorage.getItem("access_token");
-
-  if (localProxyToken) {
-    config.headers["X-Proxy-Authorization"] = `Bearer ${localProxyToken}`;
-  } else if (PROXY_ACCESS_TOKEN) {
-    config.headers["X-Proxy-Authorization"] = `Bearer ${PROXY_ACCESS_TOKEN}`;
-  }
+  // Uncomment the following lines if you want to use a proxy token from local storage or environment variable
+  // const localProxyToken = localStorage.getItem("access_token");
+  // if (localProxyToken) {
+  //   config.headers["X-Proxy-Authorization"] = `Bearer ${localProxyToken}`;
+  // } else if (PROXY_ACCESS_TOKEN) {
+  //   config.headers["X-Proxy-Authorization"] = `Bearer ${PROXY_ACCESS_TOKEN}`;
+  // }
 
   return config;
 });

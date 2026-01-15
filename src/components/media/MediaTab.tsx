@@ -36,8 +36,8 @@ type EditingMusic = Music & {
   removeThumbnail?: boolean;
 };
 
-const MUSIC_API_URL = `${API_URL}/api/v1/music`;
-const MUSIC_UPLOAD_API_URL = `${API_URL}/api/v1/music/upload`;
+const MUSIC_API_URL = `${API_URL}/music`;
+const MUSIC_UPLOAD_API_URL = `${API_URL}/music/upload`;
 
 function formatDuration(seconds: number) {
   if (!seconds || isNaN(seconds)) return "00:00";

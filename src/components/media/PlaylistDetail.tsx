@@ -161,7 +161,7 @@ export default function PlaylistDetail({ id }: { id: string }) {
 
       // Call API to delete selected tracks from playlist
       for (const trackId of trackIds) {
-        await axiosClient.delete(`${API_URL}/api/v1/playlists/${id}/tracks/${trackId}`);
+        await axiosClient.delete(`${API_URL}/playlists/${id}/tracks/${trackId}`);
       }
 
       setSongs((prev) => prev.filter((s) => !selected.has(s.id)));
@@ -184,7 +184,7 @@ export default function PlaylistDetail({ id }: { id: string }) {
   const fetchAvailableMusic = async () => {
     try {
       setAddMusicLoading(true);
-      const response = await axiosClient.get(`${API_URL}/api/v1/music`);
+      const response = await axiosClient.get(`${API_URL}/music`);
 
       const raw = response.data;
       if (!raw?.success || !raw?.data?.data || !Array.isArray(raw.data.data)) {
@@ -227,12 +227,12 @@ export default function PlaylistDetail({ id }: { id: string }) {
 
       // Send single request with all musicIds
       await axiosClient.post(
-        `${API_URL}/api/v1/playlists/${playlist.id}/tracks`,
+        `${API_URL}/playlists/${playlist.id}/tracks`,
         { musicIds }
       );
 
       // Refresh playlist data
-      const response = await axiosClient.get(`${API_URL}/api/v1/playlists/${playlist.id}`);
+      const response = await axiosClient.get(`${API_URL}/playlists/${playlist.id}`);
 
       const raw = response.data;
       const data: PlaylistResponse | undefined = raw?.data ?? raw;
@@ -321,7 +321,7 @@ export default function PlaylistDetail({ id }: { id: string }) {
       }));
 
       // Call the reorder API
-      await axiosClient.put(`${API_URL}/api/v1/playlists/${id}/tracks/reorder`, {
+      await axiosClient.put(`${API_URL}/playlists/${id}/tracks/reorder`, {
         track_orders: trackOrders,
       });
 
@@ -345,7 +345,7 @@ export default function PlaylistDetail({ id }: { id: string }) {
       setError(null);
       setCoverImageError(false);
 
-      const resp = await axiosClient.get(`${API_URL}/api/v1/playlists/${id}`);
+      const resp = await axiosClient.get(`${API_URL}/playlists/${id}`);
 
       const raw = resp?.data;
       const data: PlaylistResponse | undefined = raw?.data ?? raw;

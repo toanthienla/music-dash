@@ -202,7 +202,7 @@ export const GroupDeviceManager: React.FC<GroupDeviceManagerProps> = ({
 
     try {
       const response = await axiosClient.get<ApiResponse<ApiDevice[]>>(
-        `${API_URL}/api/v1/groups/${groupId}/devices`
+        `${API_URL}/groups/${groupId}/devices`
       );
 
       if (!response.data.success) {
@@ -231,7 +231,7 @@ export const GroupDeviceManager: React.FC<GroupDeviceManagerProps> = ({
 
     try {
       const response = await axiosClient.get<ApiMusicListResponse>(
-        `${API_URL}/api/v1/devices/music/list`
+        `${API_URL}/devices/music/list`
       );
 
       if (!response.data.success) {
@@ -297,7 +297,7 @@ export const GroupDeviceManager: React.FC<GroupDeviceManagerProps> = ({
     try {
       // axios delete with body: axios.delete(url, { data: payload })
       const response = await axiosClient.delete<ApiBatchResponse>(
-        `${API_URL}/api/v1/groups/${groupId}/devices/batch`,
+        `${API_URL}/groups/${groupId}/devices/batch`,
         { data: { device_ids: deviceIds } }
       );
 
@@ -384,7 +384,7 @@ export const GroupDeviceManager: React.FC<GroupDeviceManagerProps> = ({
 
     try {
       const response = await axiosClient.post<ApiBatchResponse>(
-        `${API_URL}/api/v1/groups/${groupId}/devices/batch`,
+        `${API_URL}/groups/${groupId}/devices/batch`,
         { device_ids: deviceIds }
       );
 

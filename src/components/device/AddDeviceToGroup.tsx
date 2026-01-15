@@ -89,7 +89,7 @@ export const AddDeviceToGroupModal: React.FC<AddDeviceToGroupModalProps> = ({
 
     try {
       const response = await axiosClient.get<ApiResponse<GroupDevice[]>>(
-        `${API_URL}/api/v1/groups/${groupId}/devices`
+        `${API_URL}/groups/${groupId}/devices`
       );
 
       if (!response.data.success) {
@@ -151,7 +151,7 @@ export const AddDeviceToGroupModal: React.FC<AddDeviceToGroupModalProps> = ({
     try {
       // Call the new batch endpoint
       const response = await axiosClient.post<ApiBatchResponse>(
-        `${API_URL}/api/v1/groups/${groupId}/devices/batch`,
+        `${API_URL}/groups/${groupId}/devices/batch`,
         { device_ids: ids }
       );
 
@@ -203,7 +203,7 @@ export const AddDeviceToGroupModal: React.FC<AddDeviceToGroupModalProps> = ({
 
     try {
       const response = await axiosClient.delete<ApiResponse<any>>(
-        `${API_URL}/api/v1/groups/${groupId}/devices/${deviceId}`
+        `${API_URL}/groups/${groupId}/devices/${deviceId}`
       );
 
       if (!response.data.success) {

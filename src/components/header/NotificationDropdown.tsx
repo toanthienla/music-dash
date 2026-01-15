@@ -24,7 +24,7 @@ export default function NotificationDropdown() {
   useEffect(() => {
     const fetchNotifications = async () => {
       try {
-        const res = await axiosClient.get(`${API_URL}/api/v1/user/notifications`, {
+        const res = await axiosClient.get(`${API_URL}/user/notifications`, {
           withCredentials: true,
         });
         console.log("Notifications API response:", res.data.data);

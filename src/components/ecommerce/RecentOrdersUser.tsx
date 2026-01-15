@@ -162,7 +162,7 @@ export default function RecentOrders() {
       try {
         setLoadingPlaylists(true);
         setErrorPlaylists(null);
-        const response = await axiosClient.get(`${API_URL}/api/v1/playlists`);
+        const response = await axiosClient.get(`${API_URL}/playlists`);
 
         if (response.data.success && response.data.data?.data) {
           setPlaylistData(response.data.data.data);
@@ -184,7 +184,7 @@ export default function RecentOrders() {
       try {
         setLoadingGroups(true);
         setErrorGroups(null);
-        const res = await axiosClient.get(`${API_URL}/api/v1/groups`);
+        const res = await axiosClient.get(`${API_URL}/groups`);
         if (res.data.success && Array.isArray(res.data.data)) {
           setGroups(res.data.data);
         }
@@ -208,8 +208,8 @@ export default function RecentOrders() {
 
         const url =
           selectedGroupId === "all"
-            ? `${API_URL}/api/v1/groups/history`
-            : `${API_URL}/api/v1/groups/${selectedGroupId}/history`;
+            ? `${API_URL}/groups/history`
+            : `${API_URL}/groups/${selectedGroupId}/history`;
 
         const res = await axiosClient.get(url);
 

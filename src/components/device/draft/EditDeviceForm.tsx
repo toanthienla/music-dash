@@ -40,7 +40,7 @@
 //         setLoading(true);
 //         try {
 //           const res = await axiosClient.get(
-//             `${API_URL}/api/v1/alldevices/${device.id}`
+//             `${API_URL}/alldevices/${device.id}`
 //           );
 //           const data = res.data?.data || res.data;
 //           setForm(data || device);
@@ -88,7 +88,7 @@
 //       console.log("PUT PAYLOAD:", payload);
 
 //       const res = await axiosClient.put(
-//         `${API_URL}/api/v1/devices/${form.id}`,
+//         `${API_URL}/devices/${form.id}`,
 //         payload,
 //         {
 //           headers: { "Content-Type": "application/json" },

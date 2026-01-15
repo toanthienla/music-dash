@@ -129,7 +129,7 @@
 //         console.log("🔹 Sending payload:", payload);
 
 //         const res = await axiosClient.post(
-//           `${API_URL}/api/v1/devices`,
+//           `${API_URL}/devices`,
 //           payload,
 //           { headers: { "Content-Type": "application/json" } }
 //         );

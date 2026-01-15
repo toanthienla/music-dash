@@ -36,7 +36,7 @@ export const EcommerceMetrics = () => {
         setError(null);
 
         const res = await axiosClient.get<ApiResponse>(
-          `${API_URL}/api/v1/devices/statistics`,
+          `${API_URL}/devices/statistics`,
           {
             withCredentials: true,
           }

@@ -182,7 +182,7 @@ export default function DemographicCard() {
       setError(null);
       try {
         // Fetch groups
-        const groupsRes = await axiosClient.get<ApiResponse<Group[]>>(`${API_URL}/api/v1/groups`);
+        const groupsRes = await axiosClient.get<ApiResponse<Group[]>>(`${API_URL}/groups`);
         if (!groupsRes.data.success || !Array.isArray(groupsRes.data.data)) {
           throw new Error(groupsRes.data.message || "Failed to fetch groups");
         }
@@ -191,7 +191,7 @@ export default function DemographicCard() {
 
         // Fetch all devices with location data
         const devicesRes = await axiosClient.get<ApiResponse<{ devices: ApiDeviceData[] }>>(
-          `${API_URL}/api/v1/devices/music/list`
+          `${API_URL}/devices/music/list`
         );
         if (!devicesRes.data.success || !devicesRes.data.data.devices) {
           throw new Error(devicesRes.data.message || "Failed to fetch devices");
@@ -224,17 +224,27 @@ export default function DemographicCard() {
 
   // ===== WebSocket for Real-time Status Updates =====
   useEffect(() => {
-    if (!PROXY_ACCESS_TOKEN) {
-      console.warn("WebSocket connection skipped: PROXY_ACCESS_TOKEN is not available.");
+    // Prefer token from localStorage key 'access_token', fallback to PROXY_ACCESS_TOKEN constant
+    let tokenToUse: string | null = null;
+    try {
+      tokenToUse = localStorage.getItem("access_token");
+    } catch (e) {
+      // localStorage not available or blocked — fall back to constant
+      tokenToUse = null;
+    }
+    if (!tokenToUse) {
+      tokenToUse = PROXY_ACCESS_TOKEN || null;
+    }
+
+    if (!tokenToUse) {
+      console.warn("WebSocket connection skipped: no access token found in localStorage or constants.");
       return;
     }
 
-    const wsUrl = "wss://musicplayer.iotek.dev/api/v1/ws";
+    const wsUrl = "wss://musicplayer.iotek.dev/ws";
 
-    // Option B: send token in query string (browser-friendly)
-    // NOTE: Tokens in URLs can be logged by proxies and servers. For production,
-    // prefer a backend proxy (server-to-server Authorization header) or short-lived tokens.
-    const wsUrlWithToken = `${wsUrl}?access_token=${encodeURIComponent(PROXY_ACCESS_TOKEN)}`;
+    // Send token in query string (browser-friendly). Using stored token first then constant.
+    const wsUrlWithToken = `${wsUrl}?access_token=${encodeURIComponent(tokenToUse)}`;
 
     const socket = new WebSocket(wsUrlWithToken);
 
